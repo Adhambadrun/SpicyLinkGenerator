@@ -1,0 +1,16 @@
+{
+  "name": "spicy-link-generator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Spicy Link Generator — GDS itinerary → booking links, with real two-factor sign-in (domain-locked to @bcflights.com).",
+  "scripts": {
+    "dev": "node dev-server.mjs"
+  },
+  "dependencies": {
+    "resend": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
