@@ -5,12 +5,16 @@ import { handleRequestCode } from '../lib/core.js';
 
 const SECRET = process.env.AUTH_SECRET;
 const RESEND_KEY = process.env.RESEND_API_KEY;   // ← replace re_xxxxxxxxx with your real key
-const FROM_EMAIL = process.env.FROM_EMAIL || 'Spicy Link Generator <login@bcflights.com>';
+// Default to Resend's TESTING sender. It works with zero DNS setup (no verified domain
+// needed), but testing mode only delivers to YOUR OWN Resend account email.
+// Once you verify bcflights.com in Resend → Domains, set:
+//   FROM_EMAIL = "Spicy Link Generator <login@bcflights.com>"
+const FROM_EMAIL = process.env.FROM_EMAIL || 'Spicy Link Generator <onboarding@resend.dev>';
 const DEV_MODE = process.env.DEV_MODE === '1';
 
 async function sendEmail({ to, requester, code }) {
   if (!RESEND_KEY) {
-    return { ok: false, error: 'No RESEND_API_KEY set — add it in Vercel → Settings → Environment Variables.' };
+    return { ok: false, error: 'No RESEND_API_KEY set — add it in Vercel → Settings → Environment Variables, then Redeploy.' };
   }
   try {
     // Lazy-import the SDK so the local dev server (which shows the code on screen
@@ -43,7 +47,17 @@ async function sendEmail({ to, requester, code }) {
     if (result && result.error) {
       const msg = result.error.message || JSON.stringify(result.error);
       console.error('Resend error', result.error.statusCode, msg);
-      return { ok: false, error: `Email send failed — ${msg}` };
+
+      // Translate the two common Resend setup errors into actions the owner can take right away.
+      let hint = '';
+      if (/verified domain|onboarding@resend\.dev/i.test(msg)) {
+        hint = ' → In Resend, verify bcflights.com under “Domains” and set FROM_EMAIL to login@bcflights.com — or use FROM_EMAIL = “Spicy Link Generator <onboarding@resend.dev>” for a quick test.';
+      } else if (/own email|testing email/i.test(msg)) {
+        hint = ' → Testing mode only sends to your Resend account email — verify bcflights.com in Resend to send to other addresses.';
+      } else if (/unauthorized|api key|invalid.*key|missing.*key/i.test(msg)) {
+        hint = ' → Check RESEND_API_KEY in Vercel env vars (must start with “re_”, not the placeholder).';
+      }
+      return { ok: false, error: `Email send failed — ${msg}${hint}` };
     }
     return { ok: true };
   } catch (e) {
