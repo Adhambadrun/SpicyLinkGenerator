@@ -9,7 +9,9 @@ const FROM_EMAIL = process.env.FROM_EMAIL || 'Spicy Link Generator <login@bcflig
 const DEV_MODE = process.env.DEV_MODE === '1';
 
 async function sendEmail({ to, requester, code }) {
-  if (!RESEND_KEY) return false;
+  if (!RESEND_KEY) {
+    return { ok: false, error: 'No RESEND_API_KEY set — add it in Vercel → Settings → Environment Variables.' };
+  }
   try {
     // Lazy-import the SDK so the local dev server (which shows the code on screen
     // instead of emailing) still runs without installing dependencies.
@@ -39,13 +41,14 @@ async function sendEmail({ to, requester, code }) {
     });
 
     if (result && result.error) {
-      console.error('Resend error', JSON.stringify(result.error).slice(0, 400));
-      return false;
+      const msg = result.error.message || JSON.stringify(result.error);
+      console.error('Resend error', result.error.statusCode, msg);
+      return { ok: false, error: `Email send failed — ${msg}` };
     }
-    return true;
+    return { ok: true };
   } catch (e) {
     console.error('sendEmail failed', e.message);
-    return false;
+    return { ok: false, error: `Email send failed — ${e.message}` };
   }
 }
 

@@ -65,7 +65,11 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
   }
 
   const sent = await sendEmail({ to: approverEmail(), requester: e, code });
-  if (!sent) return { status: 502, json: { error: 'Could not send the approval email. Check the server email configuration.' } };
+  const sentOk = sent === true || (sent && sent.ok === true);
+  const sentErr = (sent && typeof sent.error === 'string' && sent.error) || '';
+  if (!sentOk) {
+    return { status: 502, json: { error: sentErr || 'Could not send the approval email. Check the server email configuration.' } };
+  }
   return { status: 200, json: { ok: true, token, message: `A 6-digit code was sent to the approver for ${e}.` } };
 }
 
