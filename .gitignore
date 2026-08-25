@@ -6,5 +6,12 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+
 # Vercel
 .vercel/

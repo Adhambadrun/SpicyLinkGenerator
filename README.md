@@ -9,11 +9,13 @@ Made by Lamar García · lamar@bcflights.com
 
 ## How the two-factor login works
 
-1. User opens the site and enters their **@bcflights.com** work email.
+1. User opens the site and enters their **@bcflights.com** work email — **that's the only
+   field** (no name is asked for).
 2. The server checks the domain (any other domain is rejected) and generates a
    **6-digit code**.
 3. The code is emailed to the **approver** (`adhambadraan@icloud.com` by default) —
-   *not* to the user.
+   *not* to the user. The email shows **who is asking**: the name (built from the email
+   address, e.g. `lamar.garcia@…` → *Lamar Garcia*), the full email, and the code.
 4. The approver relays the code to the user (Slack/Teams/text — your choice).
 5. The user enters the code; the server verifies it and opens the app.
 
@@ -22,6 +24,7 @@ Security properties:
   and they expire after **10 minutes** (max **5** wrong attempts).
 - Sessions are signed httpOnly cookies that last 7 days.
 - Domain lock is enforced server-side (not just in the browser).
+- The code is **never** returned to the browser in production — only the approver sees it.
 
 > This is a *human-in-the-loop* approval flow by design: nobody can get in unless
 > you personally hand them a fresh code.
@@ -32,32 +35,42 @@ Security properties:
 
 ```
 spicy-link-generator/
-├── index.html          ← login page (2FA gate)
+├── index.html          ← login page (2FA gate: email → code)
 ├── app.html            ← the actual tool (redirects to login if no session)
 ├── logo.png            ← app logo
 ├── api/
-│   ├── request-code.js ← POST  validate domain → generate code → email approver
+│   ├── request-code.js ← POST  validate domain → generate code → email approver (Resend)
 │   ├── verify.js       ← POST  check code → set session cookie
-│   └── session.js      ← GET   is the visitor signed in?
+│   ├── session.js      ← GET   is the visitor signed in?
+│   └── health.js       ← GET   deployment smoke test
 ├── lib/
 │   └── core.js         ← shared crypto (HMAC sign/verify, code gen, domain lock)
-├── dev-server.mjs      ← zero-dependency local server (test mode, no email needed)
+├── dev-server.mjs      ← local server: serves the pages + the same API endpoints
+├── test/               ← node --test suite (npm test)
 ├── package.json
 ├── vercel.json
 └── .env.example
 ```
 
+> The `api/` and `lib/` folder names are not cosmetic: Vercel only exposes server functions
+> that live in `api/`, and both `dev-server.mjs` and the functions import `lib/core.js`.
+
 ---
 
-## 1 · Run locally (no email needed)
+## 1 · Run locally
 
 ```bash
+npm install          # once — installs the Resend SDK
 npm run dev          # or: node dev-server.mjs
 ```
 
-Open http://localhost:8080 — in this test mode the 6-digit code is printed on
-screen (and in the console) instead of being emailed, so you can walk the whole
-flow. Use any `name@bcflights.com` address.
+Open http://localhost:8080 and use any `name@bcflights.com` address. The dev server tries to
+send the real approval email **and** always prints the request (name, email, code) in its
+console, so the flow can be finished even on a machine with no outbound network.
+
+```bash
+npm test             # 11 tests over the auth core + the api/ handlers
+```
 
 ## 2 · Deploy to Vercel (production, real email)
 
@@ -65,37 +78,31 @@ The login email is sent with the official **Resend Node.js SDK** (`api/request-c
 
 ```javascript
 import { Resend } from 'resend';
-const resend = new Resend(process.env.RESEND_API_KEY);   // ← never hard-coded
+const resend = new Resend(process.env.RESEND_API_KEY || '<built-in default key>');
 await resend.emails.send({ from: FROM_EMAIL, to: APPROVER_EMAIL, subject: '…', html: '…' });
 ```
 
-**Prereq — set up Resend (5 minutes, free):**
-1. Sign up at https://resend.com (free tier: 100 emails/day).
-2. **API Keys** → create a key → it looks like `re_xxxxxxxx…`. **Replace
-   `RESEND_API_KEY=re_xxxxxxxx` in your Vercel env vars with this real key.**
-3. **Domains → Add domain** → add `bcflights.com` and follow the DNS records to verify it.
-   - Until then, Resend only lets you send from `onboarding@resend.dev` to your
-     own sign-up email — use that for a first test, then switch `FROM_EMAIL`
-     to `login@bcflights.com` once the domain is verified.
+**Out of the box there is nothing to configure** — the Resend key, the approver address
+(`adhambadraan@icloud.com`) and the allowed domain (`bcflights.com`) are all built in as
+defaults. Deploy and it works.
+
+**Resend setup (only if you want to send from your own address):**
+1. Sign in at https://resend.com.
+2. **Domains → Add domain** → add `bcflights.com` and follow the DNS records to verify it.
+   - Until then, Resend only lets you send from `onboarding@resend.dev`, and only to your
+     own sign-up email — which *is* the approver inbox here, so it works as-is.
+   - After verification, set `FROM_EMAIL` to `Spicy Link Generator <login@bcflights.com>`.
 
 **Deploy:**
-1. Push this folder to GitHub:
-   ```bash
-   git init
-   git add .
-   git commit -m "Spicy Link Generator — two-factor login"
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/spicy-link-generator.git
-   git push -u origin main
-   ```
+1. Push this folder to GitHub.
 2. Go to https://vercel.com → **Add New → Project** → import the repo.
 3. Framework preset: **Other** (leave build command and output directory empty).
-4. **Settings → Environment Variables** — add:
-   - `RESEND_API_KEY`  ← your real `re_…` key
-   - `FROM_EMAIL`      (e.g. `Spicy Link Generator <onboarding@resend.dev>` for a first test, then `login@bcflights.com`)
+4. **Settings → Environment Variables** (all optional — see `.env.example`):
+   - `AUTH_SECRET`     ← **recommended** (`openssl rand -hex 32`)
+   - `RESEND_API_KEY`  ← only to override the built-in key
+   - `FROM_EMAIL`      ← only once bcflights.com is verified in Resend
    - `APPROVER_EMAIL`  (default `adhambadraan@icloud.com`)
    - `ALLOWED_DOMAIN`  (default `bcflights.com`)
-   - `AUTH_SECRET`     (run `openssl rand -hex 32`)
 5. Click **Deploy**. Every future `git push` redeploys automatically.
 
 **Verify the API is live (do this first, before anything else):**
@@ -116,12 +123,17 @@ https://YOUR-SITE.vercel.app/api/health
 
 ## 3 · Change the approver / domain
 
-Edit the defaults in `.env.example` (or `lib/core.js`) — the approver email and
-allowed domain are fully configurable per environment, no code changes needed.
+Edit `.env.example` (or the defaults in `lib/core.js`) — the approver email and allowed
+domain are fully configurable per environment, no code changes needed.
 
 ## 4 · Security notes
 
-- Keep `AUTH_SECRET` secret; never commit `.env`.
+- ⚠️ **This repo is public.** The Resend API key and the fallback `AUTH_SECRET` live in the
+  source, so treat both as known: set a real `AUTH_SECRET` env var (otherwise anyone can
+  forge a session cookie and skip the approval step), and revoke/rotate the Resend key in
+  Resend → API Keys if it was ever exposed somewhere you don't trust.
+- Keep `AUTH_SECRET` secret; never commit `.env` (it is git-ignored).
 - The API endpoints send `Cache-Control: no-store` (see `vercel.json`).
 - Consider rate-limiting the login endpoint behind a firewall rule if you expect
   many attempts.
+
