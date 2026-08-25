@@ -47,15 +47,16 @@ export function unsign(token, secret) {
 
 const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 
-export async function handleRequestCode({ email, secret, sendEmail, devMode = false }) {
+export async function handleRequestCode({ email, name, secret, sendEmail, devMode = false }) {
   const e = String(email || '').trim().toLowerCase();
+  const n = String(name || '').trim().replace(/[<>]/g, '').slice(0, 80) || 'Unknown user';
   if (!EMAIL_RE.test(e)) return { status: 400, json: { error: 'Enter a valid email address.' } };
   if (e.split('@')[1] !== allowedDomain())
     return { status: 403, json: { error: `Only @${allowedDomain()} emails are allowed.` } };
 
   const code = genCode();
   const token = sign(
-    { email: e, codeHash: sha256(code), exp: Date.now() + CODE_TTL_MS, attempts: 0 },
+    { email: e, name: n, codeHash: sha256(code), exp: Date.now() + CODE_TTL_MS, attempts: 0 },
     secret
   );
 
@@ -64,13 +65,13 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
     return { status: 200, json: { ok: true, token, devCode: code, message: 'TEST MODE — code shown below (no email sent).' } };
   }
 
-  const sent = await sendEmail({ to: approverEmail(), requester: e, code });
+  const sent = await sendEmail({ to: approverEmail(), requester: e, name: n, code });
   const sentOk = sent === true || (sent && sent.ok === true);
   const sentErr = (sent && typeof sent.error === 'string' && sent.error) || '';
   if (!sentOk) {
     return { status: 502, json: { error: sentErr || 'Could not send the approval email. Check the server email configuration.' } };
   }
-  return { status: 200, json: { ok: true, token, message: `A 6-digit code was sent to the approver for ${e}.` } };
+  return { status: 200, json: { ok: true, token, message: `A 6-digit code was sent to the approver for ${n} (${e}).` } };
 }
 
 export function handleVerify({ token, code, email, secret }) {
@@ -92,10 +93,10 @@ export function handleVerify({ token, code, email, secret }) {
     };
   }
 
-  const session = sign({ email: p.email, exp: Date.now() + SESSION_TTL_MS }, secret);
+  const session = sign({ email: p.email, name: p.name || '', exp: Date.now() + SESSION_TTL_MS }, secret);
   return {
     status: 200,
-    json: { ok: true, email: p.email },
+    json: { ok: true, email: p.email, name: p.name || '' },
     cookie: `slg_session=${session}; HttpOnly; Path=/; Max-Age=${SESSION_TTL_MS / 1000}; SameSite=Lax`,
   };
 }
@@ -109,5 +110,5 @@ export function handleSession({ cookieHeader, secret }) {
   if (!token) return { status: 401, json: { ok: false } };
   const p = unsign(token.slice('slg_session='.length), secret);
   if (!p || Date.now() > p.exp) return { status: 401, json: { ok: false } };
-  return { status: 200, json: { ok: true, email: p.email } };
+  return { status: 200, json: { ok: true, email: p.email, name: p.name || '' } };
 }

@@ -98,6 +98,22 @@ await resend.emails.send({ from: FROM_EMAIL, to: APPROVER_EMAIL, subject: '…',
    - `AUTH_SECRET`     (run `openssl rand -hex 32`)
 5. Click **Deploy**. Every future `git push` redeploys automatically.
 
+**Verify the API is live (do this first, before anything else):**
+Open this in your browser, using YOUR site's address:
+```
+https://YOUR-SITE.vercel.app/api/health
+```
+- Returns `{"ok":true,"app":"Spicy Link Generator",...}` → the server is deployed ✓
+- Returns a 404 / "not found" page → the API is NOT running. You are either on a
+  static-only host (Netlify Drop / GitHub Pages — those can't run the functions),
+  opened the file by double-clicking it, or deployed without the `api/` folder.
+  Deploy the whole folder to **Vercel** and open the `vercel.app` URL.
+
+> ⚠️ The login page can only send codes through the Vercel server functions.
+> If you see "Network error — try again" on the login page, it means the browser
+> can't reach `/api/*` — almost always because the page is open as a local file,
+> on a static host, or in a sandboxed preview. Test on the Vercel URL instead.
+
 ## 3 · Change the approver / domain
 
 Edit the defaults in `.env.example` (or `lib/core.js`) — the approver email and

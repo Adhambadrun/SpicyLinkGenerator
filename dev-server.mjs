@@ -28,8 +28,8 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
 };
 
-async function sendEmail({ to, requester, code }) {
-  console.log(`\n[APPROVAL EMAIL — would send to ${to}]\n  Login request from: ${requester}\n  6-digit code:       ${code}\n  (relay this code to ${requester})\n`);
+async function sendEmail({ to, requester, name, code }) {
+  console.log(`\n[APPROVAL EMAIL — would send to ${to}]\n  Login request from: ${name} (${requester})\n  6-digit code:       ${code}\n  (relay this code to ${name})\n`);
   return true;
 }
 
@@ -49,8 +49,8 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (path === '/api/request-code' && req.method === 'POST') {
-      const { email } = JSON.parse((await readBody()) || '{}');
-      const out = await handleRequestCode({ email, secret: SECRET, sendEmail, devMode: true });
+      const { email, name } = JSON.parse((await readBody()) || '{}');
+      const out = await handleRequestCode({ email, name, secret: SECRET, sendEmail, devMode: true });
       return json(out.status, out.json);
     }
     if (path === '/api/verify' && req.method === 'POST') {
@@ -62,6 +62,9 @@ const server = http.createServer(async (req, res) => {
     if (path === '/api/session') {
       const out = handleSession({ cookieHeader: req.headers.cookie, secret: SECRET });
       return json(out.status, out.json);
+    }
+    if (path === '/api/health') {
+      return json(200, { ok: true, app: 'Spicy Link Generator', api: 'v1' });
     }
   } catch (e) {
     return json(500, { error: e.message });

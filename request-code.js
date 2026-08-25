@@ -12,7 +12,7 @@ const RESEND_KEY = process.env.RESEND_API_KEY;   // ← replace re_xxxxxxxxx wit
 const FROM_EMAIL = process.env.FROM_EMAIL || 'Spicy Link Generator <onboarding@resend.dev>';
 const DEV_MODE = process.env.DEV_MODE === '1';
 
-async function sendEmail({ to, requester, code }) {
+async function sendEmail({ to, requester, name, code }) {
   if (!RESEND_KEY) {
     return { ok: false, error: 'No RESEND_API_KEY set — add it in Vercel → Settings → Environment Variables, then Redeploy.' };
   }
@@ -25,21 +25,23 @@ async function sendEmail({ to, requester, code }) {
     const result = await resend.emails.send({
       from: FROM_EMAIL,
       to: to.split(',').map((s) => s.trim()).filter(Boolean),
-      subject: `Spicy Link Generator — login code for ${requester}`,
+      subject: `Spicy Link Generator — login request from ${name} (${requester})`,
       html: [
         '<div style="font-family:Arial,sans-serif;max-width:480px">',
-        `  <p>A login was requested for <strong>${requester}</strong>.</p>`,
-        `  <p style="font-size:28px;letter-spacing:6px;font-weight:bold;color:#e00012">${code}</p>`,
-        `  <p>Send this 6-digit code to ${requester} so they can sign in.</p>`,
-        '  <p style="color:#666;font-size:12px">The code expires in 10 minutes. If this wasn\'t you, ignore this email.</p>',
+        `  <p style="font-size:16px;margin:0 0 6px"><strong>${name}</strong> is trying to sign in.</p>`,
+        `  <p style="color:#666;margin:0 0 14px">${requester}</p>`,
+        `  <p style="margin:0 0 6px;color:#333">Their 6-digit code:</p>`,
+        `  <p style="font-size:28px;letter-spacing:6px;font-weight:bold;color:#e00012;margin:0 0 14px">${code}</p>`,
+        `  <p style="margin:0 0 14px">Give this code to <strong>${name}</strong> so they can sign in.</p>`,
+        '  <p style="color:#666;font-size:12px">The code expires in 10 minutes. If this wasn\'t expected, ignore this email.</p>',
         '</div>',
       ].join('\n'),
       text: [
-        `A login was requested for: ${requester}`,
+        `${name} (${requester}) is trying to sign in.`,
         ``,
         `6-digit code: ${code}`,
         ``,
-        `Send this code to ${requester} so they can sign in.`,
+        `Give this code to ${name} so they can sign in.`,
         `The code expires in 10 minutes.`,
       ].join('\n'),
     });
@@ -71,7 +73,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Server not configured (AUTH_SECRET + RESEND_API_KEY).' });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  const { email } = req.body || {};
-  const out = await handleRequestCode({ email, secret: SECRET, sendEmail, devMode: DEV_MODE });
+  const { email, name } = req.body || {};
+  const out = await handleRequestCode({ email, name, secret: SECRET, sendEmail, devMode: DEV_MODE });
   return res.status(out.status).json(out.json);
 }
