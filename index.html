@@ -57,12 +57,10 @@
     <!-- STEP 1 · email -->
     <div class="step active" id="step-email">
       <p class="step-tag">Step 1 · Work email</p>
-      <label>Your name</label>
-      <input id="name" type="text" placeholder="Your full name" autocomplete="name" autocapitalize="words" spellcheck="false">
       <label>Email</label>
       <input id="email" type="email" placeholder="you@bcflights.com" autocomplete="email" autocapitalize="off" spellcheck="false">
       <button id="btn-request">Request code</button>
-      <div class="hint">Only @bcflights.com emails are allowed.</div>
+      <div class="hint">Only @bcflights.com emails are allowed. A 6-digit code goes to the approver, who passes it on to you.</div>
     </div>
 
     <!-- STEP 2 · code -->
@@ -95,24 +93,22 @@
   }
 
   $('btn-request').addEventListener('click', async function(){
-    var name = $('name').value.trim();
     var email = $('email').value.trim();
-    if(!name){ setMsg('Enter your name.', 'err'); $('name').focus(); return; }
-    if(!email){ setMsg('Enter your work email.', 'err'); return; }
+    if(!email){ setMsg('Enter your work email.', 'err'); $('email').focus(); return; }
     this.disabled = true;
     setMsg('Requesting code…');
     try{
       var r = await fetch('/api/request-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, name: name })
+        body: JSON.stringify({ email: email })
       });
       var j = await r.json();
       if(!r.ok){ setMsg(j.error || 'Something went wrong.', 'err'); return; }
-      state = { token: j.token, email: email, name: name };
+      state = { token: j.token, email: email };
       $('step-email').classList.remove('active');
       $('step-code').classList.add('active');
-      if(j.devCode){ $('devhint').style.display = 'block'; $('devhint').textContent = 'Test code: ' + j.devCode; }
+      if(j.devCode){ $('devhint').style.display = 'block'; $('devhint').textContent = 'Local code: ' + j.devCode; }
       setMsg(j.message || 'Enter the code sent to the approver.', 'ok');
       setTimeout(function(){ $('code').focus(); }, 60);
     }catch(e){ serverDown(); }
