@@ -92,17 +92,16 @@ npm test             # auth core, mailer, and API handler tests
 ## 2 · Deploy to Vercel (production, real email)
 
 The login email is sent server-side with the official **Resend Node.js SDK** (`api/request-code.js`).
-The working Resend API key is built in as default, and can be overridden with the `RESEND_API_KEY` environment variable:
+The Resend API key must be supplied through the `RESEND_API_KEY` environment variable:
 
 ```javascript
 import { Resend } from 'resend';
-const resend = new Resend(process.env.RESEND_API_KEY || '<built-in default key>');
+const resend = new Resend(process.env.RESEND_API_KEY);
 await resend.emails.send({ from: FROM_EMAIL, to: APPROVER_EMAIL, subject: '…', html: '…' });
 ```
 
 **Resend setup:**
-A working default Resend key is pre-configured so OTP emails send right out of the box.
-If you wish to use your own Resend account:
+No API key is committed to the repository. To enable OTP delivery:
 1. Sign in at https://resend.com and create a key under **API Keys**.
 2. Set `RESEND_API_KEY` in your environment or Vercel settings.
 3. For a quick test sender, you can use `FROM_EMAIL=Spicy Link Generator <onboarding@resend.dev>`
@@ -115,7 +114,7 @@ If you wish to use your own Resend account:
 3. Framework preset: **Other** (leave build command and output directory empty).
 4. **Settings → Environment Variables** (all optional — working defaults are built-in):
    - `AUTH_SECRET`     ← **recommended** (`openssl rand -hex 32`)
-   - `RESEND_API_KEY`  ← optional, to override the built-in key
+   - `RESEND_API_KEY`  ← required for OTP delivery
    - `FROM_EMAIL`      ← optional, sender email (defaults to `onboarding@resend.dev`)
    - `APPROVER_EMAIL`  (default `adhambadraan@gmail.com`)
    - `ALLOWED_DOMAIN`  (default `bcflights.com`)
