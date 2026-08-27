@@ -52,13 +52,17 @@ test('api/request-code rejects a non-bcflights domain and a malformed body', asy
 
 test('api/request-code requires a provider key outside local development mode', async () => {
   const previousMode = process.env.DEV_MODE;
+  const previousVercelEnv = process.env.VERCEL_ENV;
   delete process.env.DEV_MODE;
+  delete process.env.VERCEL_ENV;
   const res = stubRes();
   await requestCode(post({ email: 'lamar.garcia@bcflights.com' }), res);
   assert.equal(res.statusCode, 500);
   assert.match(res.body.error, /RESEND_API_KEY/);
   if (previousMode === undefined) delete process.env.DEV_MODE;
   else process.env.DEV_MODE = previousMode;
+  if (previousVercelEnv === undefined) delete process.env.VERCEL_ENV;
+  else process.env.VERCEL_ENV = previousVercelEnv;
 });
 
 test('api/request-code needs only an email, then api/verify + api/session complete the login', async () => {
@@ -81,6 +85,24 @@ test('api/request-code needs only an email, then api/verify + api/session comple
   assert.equal(s.body.email, 'lamar.garcia@bcflights.com');
   assert.equal(s.body.name, 'Lamar Garcia');
   assert.match(s.headers['Set-Cookie'] || '', /slg_session=/, 'active sessions roll a fresh cookie');
+});
+
+test('api/request-code falls back to preview debug mode when VERCEL_ENV=preview and no key exists', async () => {
+  const previousMode = process.env.DEV_MODE;
+  const previousVercelEnv = process.env.VERCEL_ENV;
+  delete process.env.DEV_MODE;
+  process.env.VERCEL_ENV = 'preview';
+
+  const res = stubRes();
+  await requestCode(post({ email: 'lamar.garcia@bcflights.com' }), res);
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.match(res.body.devCode, /^\d{6}$/);
+  assert.match(res.body.message, /PREVIEW MODE/);
+
+  if (previousMode === undefined) delete process.env.DEV_MODE;
+  else process.env.DEV_MODE = previousMode;
+  if (previousVercelEnv === undefined) delete process.env.VERCEL_ENV;
+  else process.env.VERCEL_ENV = previousVercelEnv;
 });
 
 test('api/session is 401 without a cookie, api/health is ok', async () => {

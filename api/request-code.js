@@ -1,7 +1,7 @@
 // POST /api/request-code
 // Validates the @bcflights.com email, generates a 6-digit code, signs a token,
 // and emails the code — plus who is asking for it — to the approver
-// (adhambadraan@icloud.com) via Resend.
+// (adhambadraan@gmail.com) via Resend.
 import { handleRequestCode, DEFAULT_AUTH_SECRET, warnIfDefaultSecret } from '../lib/core.js';
 import { mailConfig, missingMailConfig, sendApprovalEmail } from '../lib/mailer.js';
 
@@ -19,11 +19,14 @@ export default async function handler(req, res) {
   }
 
   const { apiKey, fromEmail } = mailConfig();
-  const devMode = process.env.DEV_MODE === '1';
-  // Local DEV_MODE may run without a provider and shows the generated code. A
-  // production request must have a real key; never fall back to a key committed
-  // in source, since exposed Resend keys are revoked and unsafe to reuse.
-  if (!devMode) {
+  const localDevMode = process.env.DEV_MODE === '1';
+  const previewDebugMode = process.env.VERCEL_ENV === 'preview' && !apiKey;
+  const debugMode = localDevMode || previewDebugMode;
+  // Local development and protected preview builds may run without a provider
+  // and show the generated code. Production requests must have a real key;
+  // never fall back to a key committed in source, since exposed Resend keys are
+  // revoked and unsafe to reuse.
+  if (!debugMode) {
     const configurationError = missingMailConfig({ apiKey, fromEmail });
     if (configurationError) return res.status(500).json({ error: configurationError });
   }
@@ -32,11 +35,13 @@ export default async function handler(req, res) {
   const out = await handleRequestCode({
     email,
     secret: SECRET,
-    // DEV_MODE is deliberately offline for the API handler. The local dev server
-    // has its own mailer and can opt into a real send; a debug flag on a deployed
-    // function must not accidentally email live addresses.
-    sendEmail: devMode ? undefined : (payload) => sendApprovalEmail({ ...payload, apiKey, fromEmail }),
-    devMode,
+    // Local DEV_MODE and preview fallback are deliberately offline for the API
+    // handler. The local dev server has its own mailer and can opt into a real
+    // send; the protected preview fallback should not accidentally email live
+    // addresses when no Resend key is configured there.
+    sendEmail: debugMode ? undefined : (payload) => sendApprovalEmail({ ...payload, apiKey, fromEmail }),
+    devMode: debugMode,
+    debugModeLabel: previewDebugMode ? 'PREVIEW MODE' : 'LOCAL MODE',
   });
   return res.status(out.status).json(out.json);
 }

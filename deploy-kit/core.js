@@ -3,7 +3,7 @@
 //
 //   1) user enters their @bcflights.com email (no name is asked for)
 //   2) request code -> sign { email, name (derived from the email), codeHash, exp, attempts }
-//   3) email name + email + code to the approver (adhambadraan@icloud.com by default)
+//   3) email name + email + code to the approver (adhambadraan@gmail.com by default)
 //   4) verify       -> check signature/expiry/code -> sign a 7-day session cookie
 //
 // Domain-locked to @bcflights.com by default (override with ALLOWED_DOMAIN).
@@ -30,7 +30,7 @@ export const sha256 = (s) => crypto.createHash('sha256').update(String(s)).diges
 export const genCode = () => String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 
 export const allowedDomain = () => (process.env.ALLOWED_DOMAIN || 'bcflights.com').toLowerCase();
-export const approverEmail = () => process.env.APPROVER_EMAIL || 'adhambadraan@icloud.com';
+export const approverEmail = () => process.env.APPROVER_EMAIL || 'adhambadraan@gmail.com';
 
 export const CODE_TTL_MS = 10 * 60 * 1000;          // code lives 10 minutes
 export const MAX_ATTEMPTS = 5;                       // wrong-code tries before a new code is required
