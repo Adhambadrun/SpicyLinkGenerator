@@ -22,9 +22,25 @@ Made by Lamar García · lamar@bcflights.com
 Security properties:
 - Codes are HMAC-SHA256 signed and stateless — they cannot be forged or replayed,
   and they expire after **10 minutes** (max **5** wrong attempts).
-- Sessions are signed httpOnly cookies that last 7 days.
+- Sessions are signed httpOnly cookies; the hard cap is 7 days but the **idle rule**
+  kills them after **5 unused minutes** (see below).
 - Domain lock is enforced server-side (not just in the browser).
 - The code is **never** returned to the browser in production — only the approver sees it.
+
+### Dead end for outsiders
+
+A **non-@bcflights.com email** *or* a **wrong/expired code** replaces the whole login page
+with a full-screen `dead end.png` (the gorilla). The form is destroyed, there is no button,
+link or "back", and the tab is flagged in `sessionStorage` so reloading in the same tab shows
+the dead end again. Only a brand-new tab gets a fresh login form.
+
+### Sessions: per-tab, and 5-minute idle
+
+- Signing in marks **that tab** (`sessionStorage`), so **closing the tab — or opening a new
+  one — always requires logging in again**, even if the cookie is still valid.
+- While the app is open, user activity (mouse/keys/scroll/touch) refreshes a timestamp and a
+  heartbeat re-signs the cookie. If the tab sits **unused for 5 minutes**, the page logs
+  itself out, and the server also refuses the stale cookie (`reason: "idle"`).
 
 > This is a *human-in-the-loop* approval flow by design: nobody can get in unless
 > you personally hand them a fresh code.
