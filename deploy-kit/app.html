@@ -269,7 +269,7 @@ function normalizeLine(s){
   return out;
 }
 function parseTime(raw){
-  let s=raw.toUpperCase().replace(/\+1|¥1|‡1|†1|‡|†/g,'');
+  let s=raw.toUpperCase().replace(/[^A-Z0-9]?1$/,'').replace(/[^A-Z0-9]$/,'');
   // bare "1" next-day marker glued to the time (e.g. "1050A1" = 10:50 AM +1 day)
   s=s.replace(/([APN])1$/,'$1').replace(/^(\d{4})1$/,'$1');
   const m=s.match(/^(\d{3,4})([APN])$/);
@@ -317,12 +317,12 @@ function tryParseLine(line){
   if(six){origin=six.slice(0,3);dest=six.slice(3,6);}
   else{const airports=toks.filter(t=>/^[A-Z]{3}$/.test(t));if(airports.length>=2){origin=airports[0];dest=airports[1];}}
   if(!origin)return null;
-  let timeToks=toks.filter(t=>/^\d{3,4}[APN](\+1|¥1|‡1|†1|‡|†|1)?$/.test(t)||/^\d{1,2}:\d{2}[APN](\+1|¥1|‡1|†1|‡|†|1)?$/.test(t));
-  if(timeToks.length<2)timeToks=toks.filter(t=>t!==num&&(/^\d{4}(\+1|¥1|‡1|†1|‡|†|1)?$/.test(t)||/^\d{1,2}:\d{2}(\+1|¥1|‡1|†1|‡|†|1)?$/.test(t)));
+  let timeToks=toks.filter(t=>/^\d{3,4}[APN]?([^A-Z0-9]?1|[^A-Z0-9]|1)?$/i.test(t)||/^\d{1,2}:\d{2}[APN]?([^A-Z0-9]?1|[^A-Z0-9]|1)?$/i.test(t));
+  if(timeToks.length<2)timeToks=toks.filter(t=>t!==num&&(/^\d{4}([^A-Z0-9]?1|[^A-Z0-9]|1)?$/i.test(t)||/^\d{1,2}:\d{2}([^A-Z0-9]?1|[^A-Z0-9]|1)?$/i.test(t)));
   if(timeToks.length<2)return null;
   const dep=parseTime(timeToks[0]),arr=parseTime(timeToks[1]); if(!dep||!arr)return null;
-  if(/\+1|¥1|‡|†/.test(timeToks[1])||/[APN]1$/.test(timeToks[1])||/^\d{4}1$/.test(timeToks[1]))plus=true;
-  if(toks.some(t=>t==='+1'||t==='¥1'||t==='‡1'||t==='†1'||t==='‡'||t==='†'))plus=true;
+  if(/[^A-Z0-9]?1$/.test(timeToks[1])||/[APN]1$/i.test(timeToks[1])||/^\d{4}1$/.test(timeToks[1])||/[^A-Z0-9]$/.test(timeToks[1]))plus=true;
+  if(toks.some(t=>/^[^A-Z0-9]?1$/.test(t)||/^[^A-Z0-9]$/.test(t)))plus=true;
   let seats=0,status='';
   const st=toks.find(t=>/^[A-Z]{2}\d$/.test(t)); if(st){status=st.slice(0,2);seats=parseInt(st.slice(-1))||0;}
   return {carrier,num,cls:cls.toUpperCase(),origin,dest,ymd:ymdFrom(d0),depH:dep[0],depM:dep[1],arrH:arr[0],arrM:arr[1],plus,op:op||'',married,status,seats};
