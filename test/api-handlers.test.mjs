@@ -123,5 +123,5 @@ test('api/session is 401 without a cookie, api/health is ok and reports mailConf
   assert.equal(h.statusCode, 200);
   assert.equal(h.body.ok, true);
   assert.equal(h.body.mailConfigured, false);
-  assert.equal(h.body.mailFrom, 'Spicy Link Generator <onboarding@resend.dev>');
+  assert.equal(h.body.mailFrom, 'SPICY LAMAR <onboarding@resend.dev>');
 });

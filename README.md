@@ -1,9 +1,9 @@
-# Spicy Link Generator
+# SPICY LAMAR
 
 A single-page tool that turns a GDS (Sabre/Amadeus) itinerary into booking-ready links and
 BookWithMatrix-valid JSON — fronted by a **real two-factor sign-in** gate.
 
-Made by Lamar García · lamar@bcflights.com
+SPICY LAMAR · lamar@bcflights.com
 
 ---
 
@@ -104,7 +104,7 @@ await resend.emails.send({ from: FROM_EMAIL, to: APPROVER_EMAIL, subject: '…',
 No API key is committed to the repository. To enable OTP delivery:
 1. Sign in at https://resend.com and create a key under **API Keys**.
 2. Set `RESEND_API_KEY` in your environment or Vercel settings.
-3. For a quick test sender, you can use `FROM_EMAIL=Spicy Link Generator <onboarding@resend.dev>`
+3. For a quick test sender, you can use `FROM_EMAIL=SPICY LAMAR <onboarding@resend.dev>`
    (delivers to your Resend account email). For other domains, verify your domain under
    **Domains → Add domain** and set `FROM_EMAIL` to `login@bcflights.com`.
 
@@ -125,7 +125,7 @@ Open this in your browser, using YOUR site's address:
 ```
 https://YOUR-SITE.vercel.app/api/health
 ```
-- Returns `{"ok":true,"app":"Spicy Link Generator",...}` → the server is deployed ✓
+- Returns `{"ok":true,"app":"SPICY LAMAR",...}` → the server is deployed ✓
   Check `mailConfigured`: it must be `true` for production OTP emails to be sent.
 - Returns a 404 / "not found" page → the API is NOT running. You are either on a
   static-only host (Netlify Drop / GitHub Pages — those can't run the functions),

@@ -1,4 +1,4 @@
-// Local dev + preview server for Spicy Link Generator.
+// Local dev + preview server for SPICY LAMAR.
 // Serves the static pages AND the four API endpoints.
 //
 //   npm run dev            # or: node dev-server.mjs
@@ -102,7 +102,7 @@ const server = http.createServer(async (req, res) => {
       const config = mailConfig();
       return json(200, {
         ok: true,
-        app: 'Spicy Link Generator',
+        app: 'SPICY LAMAR',
         api: 'v1',
         approver: approverEmail(),
         mailConfigured: Boolean(config.apiKey),
@@ -131,7 +131,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Spicy Link Generator (2FA) dev server → http://localhost:${PORT}`);
+  console.log(`SPICY LAMAR (2FA) dev server → http://localhost:${PORT}`);
   console.log(`Approval emails go to ${approverEmail()} · sender: ${STARTUP_MAIL_CONFIG.fromEmail}`);
   console.log(`Email provider: ${STARTUP_MAIL_CONFIG.apiKey ? 'Resend configured' : 'not configured (local code will be shown)'}`);
 });

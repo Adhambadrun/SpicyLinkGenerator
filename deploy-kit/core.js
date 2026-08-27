@@ -1,4 +1,4 @@
-// Shared authentication core for Spicy Link Generator.
+// Shared authentication core for SPICY LAMAR.
 // Real two-factor flow, stateless: everything is HMAC-SHA256 signed, so no database is needed.
 //
 //   1) user enters their @bcflights.com email (no name is asked for)

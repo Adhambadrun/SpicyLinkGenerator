@@ -8,7 +8,7 @@ export default function handler(req, res) {
   const { apiKey, fromEmail } = mailConfig();
   res.status(200).json({
     ok: true,
-    app: 'Spicy Link Generator',
+    app: 'SPICY LAMAR',
     api: 'v1',
     mailConfigured: Boolean(apiKey),
     mailFrom: fromEmail,
