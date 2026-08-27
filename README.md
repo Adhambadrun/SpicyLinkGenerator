@@ -92,37 +92,34 @@ npm test             # auth core, mailer, and API handler tests
 ## 2 · Deploy to Vercel (production, real email)
 
 The login email is sent server-side with the official **Resend Node.js SDK** (`api/request-code.js`).
-The API key is intentionally read only from the environment; it is never hard-coded:
+The working Resend API key is built in as default, and can be overridden with the `RESEND_API_KEY` environment variable:
 
 ```javascript
 import { Resend } from 'resend';
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(process.env.RESEND_API_KEY || '<built-in default key>');
 await resend.emails.send({ from: FROM_EMAIL, to: APPROVER_EMAIL, subject: '…', html: '…' });
 ```
 
 **Resend setup:**
-1. Sign in at https://resend.com and create a fresh key under **API Keys**.
-2. **Domains → Add domain** → add `bcflights.com` and follow the DNS records to verify it.
-3. For a quick first test, you can use `FROM_EMAIL=Spicy Link Generator <onboarding@resend.dev>`.
-   Resend's test sender only delivers to the email address associated with the Resend account.
-   For production or other recipient addresses, verify your domain and switch to something like
-   `FROM_EMAIL=Spicy Link Generator <login@bcflights.com>`.
+A working default Resend key is pre-configured so OTP emails send right out of the box.
+If you wish to use your own Resend account:
+1. Sign in at https://resend.com and create a key under **API Keys**.
+2. Set `RESEND_API_KEY` in your environment or Vercel settings.
+3. For a quick test sender, you can use `FROM_EMAIL=Spicy Link Generator <onboarding@resend.dev>`
+   (delivers to your Resend account email). For other domains, verify your domain under
+   **Domains → Add domain** and set `FROM_EMAIL` to `login@bcflights.com`.
 
 **Deploy:**
 1. Push this folder to GitHub.
 2. Go to https://vercel.com → **Add New → Project** → import the repo.
 3. Framework preset: **Other** (leave build command and output directory empty).
-4. **Settings → Environment Variables** — set these before deploying:
+4. **Settings → Environment Variables** (all optional — working defaults are built-in):
    - `AUTH_SECRET`     ← **recommended** (`openssl rand -hex 32`)
-   - `RESEND_API_KEY`  ← a current Resend key (**required for production email**)
-   - `FROM_EMAIL`      ← a sender on your verified `bcflights.com` domain
+   - `RESEND_API_KEY`  ← optional, to override the built-in key
+   - `FROM_EMAIL`      ← optional, sender email (defaults to `onboarding@resend.dev`)
    - `APPROVER_EMAIL`  (default `adhambadraan@gmail.com`)
    - `ALLOWED_DOMAIN`  (default `bcflights.com`)
 5. Click **Deploy**. Every future `git push` redeploys automatically.
-
-If `RESEND_API_KEY` is missing, the endpoint now returns a clear configuration error instead
-of pretending that an OTP was sent. Set the variables in Vercel and redeploy after changing
-them.
 
 **Verify the API is live (do this first, before anything else):**
 Open this in your browser, using YOUR site's address:
