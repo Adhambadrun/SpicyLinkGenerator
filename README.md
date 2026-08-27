@@ -80,46 +80,49 @@ npm install          # once — installs the Resend SDK
 npm run dev          # or: node dev-server.mjs
 ```
 
-Open http://localhost:8080 and use any `name@bcflights.com` address. The dev server tries to
-send the real approval email **and** always prints the request (name, email, code) in its
-console, so the flow can be finished even on a machine with no outbound network.
+Open http://localhost:8080 and use any `name@bcflights.com` address. The dev server always
+prints the request (name, email, code) in its console, so the flow can be finished locally.
+If a `RESEND_API_KEY` is present in `.env`, it also sends the real approval email using the
+same mailer as production; without one, the local code is returned for development only.
 
 ```bash
-npm test             # 11 tests over the auth core + the api/ handlers
+npm test             # auth core, mailer, and API handler tests
 ```
 
 ## 2 · Deploy to Vercel (production, real email)
 
-The login email is sent with the official **Resend Node.js SDK** (`api/request-code.js`):
+The login email is sent server-side with the official **Resend Node.js SDK** (`api/request-code.js`).
+The API key is intentionally read only from the environment; it is never hard-coded:
 
 ```javascript
 import { Resend } from 'resend';
-const resend = new Resend(process.env.RESEND_API_KEY || '<built-in default key>');
+const resend = new Resend(process.env.RESEND_API_KEY);
 await resend.emails.send({ from: FROM_EMAIL, to: APPROVER_EMAIL, subject: '…', html: '…' });
 ```
 
-**Out of the box there is nothing to configure** — the Resend key, the approver address
-(`adhambadraan@icloud.com`) and the allowed domain (`bcflights.com`) are all built in as
-defaults. Deploy and it works.
-
-**Resend setup (only if you want to send from your own address):**
-1. Sign in at https://resend.com.
+**Resend setup:**
+1. Sign in at https://resend.com and create a fresh key under **API Keys**.
 2. **Domains → Add domain** → add `bcflights.com` and follow the DNS records to verify it.
-   - Until then, Resend only lets you send from `onboarding@resend.dev`, and only to your
-     own sign-up email — which *is* the approver inbox here, so it works as-is.
-   - After verification, set `FROM_EMAIL` to `Spicy Link Generator <login@bcflights.com>`.
+3. Use `FROM_EMAIL=Spicy Link Generator <login@bcflights.com>` after the domain is verified.
+   Before verification, Resend's `onboarding@resend.dev` test sender can only deliver to the
+   email address associated with the Resend account. It will not deliver to an arbitrary
+   approver inbox.
 
 **Deploy:**
 1. Push this folder to GitHub.
 2. Go to https://vercel.com → **Add New → Project** → import the repo.
 3. Framework preset: **Other** (leave build command and output directory empty).
-4. **Settings → Environment Variables** (all optional — see `.env.example`):
+4. **Settings → Environment Variables** — set these before deploying:
    - `AUTH_SECRET`     ← **recommended** (`openssl rand -hex 32`)
-   - `RESEND_API_KEY`  ← only to override the built-in key
-   - `FROM_EMAIL`      ← only once bcflights.com is verified in Resend
+   - `RESEND_API_KEY`  ← a current Resend key (**required for production email**)
+   - `FROM_EMAIL`      ← a sender on your verified `bcflights.com` domain
    - `APPROVER_EMAIL`  (default `adhambadraan@icloud.com`)
    - `ALLOWED_DOMAIN`  (default `bcflights.com`)
 5. Click **Deploy**. Every future `git push` redeploys automatically.
+
+If `RESEND_API_KEY` is missing, the endpoint now returns a clear configuration error instead
+of pretending that an OTP was sent. Set the variables in Vercel and redeploy after changing
+them.
 
 **Verify the API is live (do this first, before anything else):**
 Open this in your browser, using YOUR site's address:
@@ -127,6 +130,7 @@ Open this in your browser, using YOUR site's address:
 https://YOUR-SITE.vercel.app/api/health
 ```
 - Returns `{"ok":true,"app":"Spicy Link Generator",...}` → the server is deployed ✓
+  Check `mailConfigured`: it must be `true` for production OTP emails to be sent.
 - Returns a 404 / "not found" page → the API is NOT running. You are either on a
   static-only host (Netlify Drop / GitHub Pages — those can't run the functions),
   opened the file by double-clicking it, or deployed without the `api/` folder.
@@ -144,11 +148,11 @@ domain are fully configurable per environment, no code changes needed.
 
 ## 4 · Security notes
 
-- ⚠️ **This repo is public.** The Resend API key and the fallback `AUTH_SECRET` live in the
-  source, so treat both as known: set a real `AUTH_SECRET` env var (otherwise anyone can
-  forge a session cookie and skip the approval step), and revoke/rotate the Resend key in
-  Resend → API Keys if it was ever exposed somewhere you don't trust.
-- Keep `AUTH_SECRET` secret; never commit `.env` (it is git-ignored).
+- ⚠️ **This repo is public.** Never commit `RESEND_API_KEY` or `AUTH_SECRET`. Any Resend key
+  that was previously present in the repository should be revoked and replaced in Vercel →
+  Settings → Environment Variables. Anyone who knows the fallback `AUTH_SECRET` can forge a
+  session cookie and skip the approval step, so set a real `AUTH_SECRET` before deploying.
+- Keep both secrets private; never commit `.env` (it is git-ignored).
 - The API endpoints send `Cache-Control: no-store` (see `vercel.json`).
 - Consider rate-limiting the login endpoint behind a firewall rule if you expect
   many attempts.
