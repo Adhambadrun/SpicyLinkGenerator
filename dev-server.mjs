@@ -4,7 +4,7 @@
 //   npm run dev            # or: node dev-server.mjs
 //   → http://localhost:8080
 //
-// The approval email is sent for real (Resend → adhambadraan@icloud.com) when the key is
+// The approval email is sent for real (Resend → adhambadraan@gmail.com) when the key is
 // reachable, and the 6-digit code is ALSO printed here on screen + in the console, so the
 // whole 2FA flow can be walked even on a machine with no outbound network.
 

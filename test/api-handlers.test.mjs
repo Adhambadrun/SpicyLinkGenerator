@@ -50,11 +50,13 @@ test('api/request-code rejects a non-bcflights domain and a malformed body', asy
   assert.equal(res.statusCode, 405);
 });
 
-test('api/request-code requires a provider key outside local development mode', async () => {
+test('api/request-code requires a provider key outside local development mode when disabled', async () => {
   const previousMode = process.env.DEV_MODE;
   const previousVercelEnv = process.env.VERCEL_ENV;
+  const previousKey = process.env.RESEND_API_KEY;
   delete process.env.DEV_MODE;
   delete process.env.VERCEL_ENV;
+  process.env.RESEND_API_KEY = 'disabled';
   const res = stubRes();
   await requestCode(post({ email: 'lamar.garcia@bcflights.com' }), res);
   assert.equal(res.statusCode, 500);
@@ -63,6 +65,8 @@ test('api/request-code requires a provider key outside local development mode', 
   else process.env.DEV_MODE = previousMode;
   if (previousVercelEnv === undefined) delete process.env.VERCEL_ENV;
   else process.env.VERCEL_ENV = previousVercelEnv;
+  if (previousKey === undefined) delete process.env.RESEND_API_KEY;
+  else process.env.RESEND_API_KEY = previousKey;
 });
 
 test('api/request-code needs only an email, then api/verify + api/session complete the login', async () => {
@@ -90,8 +94,10 @@ test('api/request-code needs only an email, then api/verify + api/session comple
 test('api/request-code falls back to preview debug mode when VERCEL_ENV=preview and no key exists', async () => {
   const previousMode = process.env.DEV_MODE;
   const previousVercelEnv = process.env.VERCEL_ENV;
+  const previousKey = process.env.RESEND_API_KEY;
   delete process.env.DEV_MODE;
   process.env.VERCEL_ENV = 'preview';
+  process.env.RESEND_API_KEY = 'disabled';
 
   const res = stubRes();
   await requestCode(post({ email: 'lamar.garcia@bcflights.com' }), res);
@@ -103,9 +109,11 @@ test('api/request-code falls back to preview debug mode when VERCEL_ENV=preview 
   else process.env.DEV_MODE = previousMode;
   if (previousVercelEnv === undefined) delete process.env.VERCEL_ENV;
   else process.env.VERCEL_ENV = previousVercelEnv;
+  if (previousKey === undefined) delete process.env.RESEND_API_KEY;
+  else process.env.RESEND_API_KEY = previousKey;
 });
 
-test('api/session is 401 without a cookie, api/health is ok', async () => {
+test('api/session is 401 without a cookie, api/health is ok and reports mailConfigured', async () => {
   const s = stubRes();
   await session(get(), s);
   assert.equal(s.statusCode, 401);
@@ -114,5 +122,6 @@ test('api/session is 401 without a cookie, api/health is ok', async () => {
   await health(get(), h);
   assert.equal(h.statusCode, 200);
   assert.equal(h.body.ok, true);
-  assert.equal(h.body.mailConfigured, false);
+  assert.equal(h.body.mailConfigured, true);
+  assert.equal(h.body.mailFrom, 'Spicy Link Generator <onboarding@resend.dev>');
 });
