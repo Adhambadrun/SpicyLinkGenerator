@@ -41,7 +41,7 @@ test('handleRequestCode emails the approver the requester name, email and code â
   assert.equal(out.status, 200);
   assert.equal(out.json.ok, true);
   assert.ok(!('devCode' in out.json), 'production mode must never return the code to the browser');
-  assert.equal(payload.to, 'adhambadraan@icloud.com');
+  assert.equal(payload.to, 'adhambadraan@gmail.com');
   assert.equal(payload.requester, 'lamar.garcia@bcflights.com');
   assert.equal(payload.name, 'Lamar Garcia');
   assert.match(payload.code, /^\d{6}$/);

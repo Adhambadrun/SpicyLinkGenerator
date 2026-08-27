@@ -13,7 +13,7 @@ Made by Lamar García · lamar@bcflights.com
    field** (no name is asked for).
 2. The server checks the domain (any other domain is rejected) and generates a
    **6-digit code**.
-3. The code is emailed to the **approver** (`adhambadraan@icloud.com` by default) —
+3. The code is emailed to the **approver** (`adhambadraan@gmail.com` by default) —
    *not* to the user. The email shows **who is asking**: the name (built from the email
    address, e.g. `lamar.garcia@…` → *Lamar Garcia*), the full email, and the code.
 4. The approver relays the code to the user (Slack/Teams/text — your choice).
@@ -103,10 +103,10 @@ await resend.emails.send({ from: FROM_EMAIL, to: APPROVER_EMAIL, subject: '…',
 **Resend setup:**
 1. Sign in at https://resend.com and create a fresh key under **API Keys**.
 2. **Domains → Add domain** → add `bcflights.com` and follow the DNS records to verify it.
-3. Use `FROM_EMAIL=Spicy Link Generator <login@bcflights.com>` after the domain is verified.
-   Before verification, Resend's `onboarding@resend.dev` test sender can only deliver to the
-   email address associated with the Resend account. It will not deliver to an arbitrary
-   approver inbox.
+3. For a quick first test, you can use `FROM_EMAIL=Spicy Link Generator <onboarding@resend.dev>`.
+   Resend's test sender only delivers to the email address associated with the Resend account.
+   For production or other recipient addresses, verify your domain and switch to something like
+   `FROM_EMAIL=Spicy Link Generator <login@bcflights.com>`.
 
 **Deploy:**
 1. Push this folder to GitHub.
@@ -116,7 +116,7 @@ await resend.emails.send({ from: FROM_EMAIL, to: APPROVER_EMAIL, subject: '…',
    - `AUTH_SECRET`     ← **recommended** (`openssl rand -hex 32`)
    - `RESEND_API_KEY`  ← a current Resend key (**required for production email**)
    - `FROM_EMAIL`      ← a sender on your verified `bcflights.com` domain
-   - `APPROVER_EMAIL`  (default `adhambadraan@icloud.com`)
+   - `APPROVER_EMAIL`  (default `adhambadraan@gmail.com`)
    - `ALLOWED_DOMAIN`  (default `bcflights.com`)
 5. Click **Deploy**. Every future `git push` redeploys automatically.
 
