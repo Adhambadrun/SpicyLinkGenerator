@@ -1,10 +1,11 @@
 // Handler-level tests: drive the actual Vercel functions in api/ with stubbed req/res.
 // Run with: npm test
 //
-// AUTH_SECRET is deliberately left unset so this exercises the zero-config default path,
-// and RESEND_API_KEY is set to an invalid key so a test can never send a real email.
+// AUTH_SECRET is deliberately left unset so this exercises the local default path.
+// DEV_MODE allows the request to complete without a provider; with no API key the
+// handler must never attempt a real email during tests.
 process.env.DEV_MODE = '1';
-process.env.RESEND_API_KEY = 're_invalid_key_for_tests';
+delete process.env.RESEND_API_KEY;
 delete process.env.AUTH_SECRET;
 
 import { test } from 'node:test';
@@ -49,6 +50,17 @@ test('api/request-code rejects a non-bcflights domain and a malformed body', asy
   assert.equal(res.statusCode, 405);
 });
 
+test('api/request-code requires a provider key outside local development mode', async () => {
+  const previousMode = process.env.DEV_MODE;
+  delete process.env.DEV_MODE;
+  const res = stubRes();
+  await requestCode(post({ email: 'lamar.garcia@bcflights.com' }), res);
+  assert.equal(res.statusCode, 500);
+  assert.match(res.body.error, /RESEND_API_KEY/);
+  if (previousMode === undefined) delete process.env.DEV_MODE;
+  else process.env.DEV_MODE = previousMode;
+});
+
 test('api/request-code needs only an email, then api/verify + api/session complete the login', async () => {
   const res = stubRes();
   await requestCode(post({ email: 'lamar.garcia@bcflights.com' }), res);
@@ -80,4 +92,5 @@ test('api/session is 401 without a cookie, api/health is ok', async () => {
   await health(get(), h);
   assert.equal(h.statusCode, 200);
   assert.equal(h.body.ok, true);
+  assert.equal(h.body.mailConfigured, false);
 });
