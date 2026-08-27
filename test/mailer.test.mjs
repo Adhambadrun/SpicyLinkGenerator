@@ -2,19 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_FROM_EMAIL,
-  DEFAULT_RESEND_API_KEY,
   mailConfig,
   missingMailConfig,
   sendApprovalEmail,
 } from '../lib/mailer.js';
 
-test('mailConfig trims environment values and uses the default key and sender', () => {
+test('mailConfig trims environment values and requires a key', () => {
   const customConfig = mailConfig({ RESEND_API_KEY: '  re_test  ', FROM_EMAIL: '  test@example.com  ' });
   assert.equal(customConfig.apiKey, 're_test');
   assert.equal(customConfig.fromEmail, 'test@example.com');
 
   const defaultConfig = mailConfig({});
-  assert.equal(defaultConfig.apiKey, DEFAULT_RESEND_API_KEY);
+  assert.equal(defaultConfig.apiKey, '');
   assert.equal(defaultConfig.fromEmail, DEFAULT_FROM_EMAIL);
 
   const disabledConfig = mailConfig({ RESEND_API_KEY: 'disabled', FROM_EMAIL: 'disabled' });
@@ -26,7 +25,7 @@ test('missing mail credentials are reported without importing or calling Resend'
   const disabledConfig = mailConfig({ RESEND_API_KEY: 'disabled', FROM_EMAIL: DEFAULT_FROM_EMAIL });
   assert.match(missingMailConfig(disabledConfig), /RESEND_API_KEY/);
   assert.match(missingMailConfig({ apiKey: '', fromEmail: DEFAULT_FROM_EMAIL }), /RESEND_API_KEY/);
-  assert.match(missingMailConfig({ apiKey: DEFAULT_RESEND_API_KEY, fromEmail: '' }), /FROM_EMAIL/);
+  assert.match(missingMailConfig({ apiKey: 're_test', fromEmail: '' }), /FROM_EMAIL/);
 
   const out = await sendApprovalEmail({
     to: 'approver@example.com',
