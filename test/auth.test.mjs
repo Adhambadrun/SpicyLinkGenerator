@@ -80,6 +80,28 @@ test('full flow: the emailed code opens a session cookie', async () => {
   assert.equal(session.status, 200);
   assert.equal(session.json.email, 'lamar.garcia@bcflights.com');
   assert.equal(session.json.name, 'Lamar Garcia');
+  assert.ok(session.cookie, 'an active session rolls a fresh cookie');
+});
+
+test('idle sessions (>5 min unused) are refused, active ones roll forward', async () => {
+  const { sign, IDLE_TTL_MS, SESSION_TTL_MS } = await import('../lib/core.js');
+  const now = Date.now();
+
+  const stale = sign(
+    { email: 'x@bcflights.com', name: 'X', act: now - IDLE_TTL_MS - 1000, exp: now + SESSION_TTL_MS },
+    SECRET
+  );
+  const idleOut = handleSession({ cookieHeader: 'slg_session=' + stale, secret: SECRET });
+  assert.equal(idleOut.status, 401);
+  assert.equal(idleOut.json.reason, 'idle');
+
+  const fresh = sign({ email: 'x@bcflights.com', name: 'X', act: now, exp: now + SESSION_TTL_MS }, SECRET);
+  const okOut = handleSession({ cookieHeader: 'slg_session=' + fresh, secret: SECRET });
+  assert.equal(okOut.status, 200);
+  assert.ok(okOut.cookie, 'active session gets a rolled cookie');
+  // the rolled cookie must itself be valid
+  const rolled = handleSession({ cookieHeader: okOut.cookie.split(';')[0], secret: SECRET });
+  assert.equal(rolled.status, 200);
 });
 
 test('verify rejects a wrong code, a wrong secret and a mismatched email', async () => {

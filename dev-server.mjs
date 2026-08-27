@@ -35,6 +35,9 @@ const MIME = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.css': 'text/css; charset=utf-8',
@@ -116,6 +119,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === '/api/session') {
       const out = handleSession({ cookieHeader: req.headers.cookie, secret: SECRET });
+      if (out.cookie) res.setHeader('Set-Cookie', out.cookie);
       return json(out.status, out.json);
     }
     if (path === '/api/health') {
@@ -134,7 +138,7 @@ const server = http.createServer(async (req, res) => {
   }
   try {
     const data = await readFile(file);
-    res.writeHead(200, { 'Content-Type': MIME[extname(file).toLowerCase()] || 'application/octet-stream' });
+    res.writeHead(200, { 'Content-Type': MIME[extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     res.end(data);
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain' });

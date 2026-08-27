@@ -68,6 +68,7 @@ test('api/request-code needs only an email, then api/verify + api/session comple
   assert.equal(s.statusCode, 200);
   assert.equal(s.body.email, 'lamar.garcia@bcflights.com');
   assert.equal(s.body.name, 'Lamar Garcia');
+  assert.match(s.headers['Set-Cookie'] || '', /slg_session=/, 'active sessions roll a fresh cookie');
 });
 
 test('api/session is 401 without a cookie, api/health is ok', async () => {

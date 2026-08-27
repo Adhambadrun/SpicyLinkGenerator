@@ -15,3 +15,7 @@ node_modules/
 
 # Vercel
 .vercel/
+
+# Local preview stand-in only. The real image lives in the GitHub repo as
+# "Dead end.jpg" (uploaded by the owner) — never commit the placeholder over it.
+Dead end.jpg
