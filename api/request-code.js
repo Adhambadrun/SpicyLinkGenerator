@@ -1,5 +1,5 @@
 // POST /api/request-code
-// Validates the @bcflights.com email, generates a 6-digit code, signs a token,
+// Validates the email domain (@bcflights.com / @travelbusinessclass.com), generates a 6-digit code, signs a token,
 // and emails the code — plus who is asking for it — to the approver
 // (adhambadraan@gmail.com) via Resend.
 import { handleRequestCode, DEFAULT_AUTH_SECRET, warnIfDefaultSecret } from '../lib/core.js';

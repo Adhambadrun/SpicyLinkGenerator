@@ -6,6 +6,8 @@ import {
   handleRequestCode,
   handleVerify,
   handleSession,
+  allowedDomains,
+  isAllowedDomain,
   MAX_ATTEMPTS,
 } from '../lib/core.js';
 
@@ -25,6 +27,35 @@ test('handleRequestCode rejects a bad address and a foreign domain', async () =>
   const foreign = await handleRequestCode({ email: 'someone@gmail.com', secret: SECRET, sendEmail: async () => ({ ok: true }) });
   assert.equal(foreign.status, 403);
   assert.match(foreign.json.error, /@bcflights\.com/);
+  assert.match(foreign.json.error, /@travelbusinessclass\.com/);
+});
+
+test('both company domains are allowed by default (case-insensitive)', async () => {
+  assert.deepEqual(allowedDomains(), ['bcflights.com', 'travelbusinessclass.com']);
+  assert.equal(isAllowedDomain('bcflights.com'), true);
+  assert.equal(isAllowedDomain('TravelBusinessClass.com'), true);
+  assert.equal(isAllowedDomain('gmail.com'), false);
+
+  for (const email of ['Someone@BCFlights.com', 'agent@travelbusinessclass.com']) {
+    const ok = await handleRequestCode({ email, secret: SECRET, sendEmail: async () => ({ ok: true }) });
+    assert.equal(ok.status, 200, `${email} should be accepted`);
+  }
+});
+
+test('ALLOWED_DOMAINS / ALLOWED_DOMAIN env overrides the default list', () => {
+  const prevList = process.env.ALLOWED_DOMAINS;
+  const prevOne = process.env.ALLOWED_DOMAIN;
+  try {
+    process.env.ALLOWED_DOMAINS = ' @One.com, two.org;three.net ';
+    assert.deepEqual(allowedDomains(), ['one.com', 'two.org', 'three.net']);
+    delete process.env.ALLOWED_DOMAINS;
+    process.env.ALLOWED_DOMAIN = 'legacy.com';
+    assert.deepEqual(allowedDomains(), ['legacy.com']);
+    assert.equal(isAllowedDomain('bcflights.com'), false);
+  } finally {
+    if (prevList === undefined) delete process.env.ALLOWED_DOMAINS; else process.env.ALLOWED_DOMAINS = prevList;
+    if (prevOne === undefined) delete process.env.ALLOWED_DOMAIN; else process.env.ALLOWED_DOMAIN = prevOne;
+  }
 });
 
 test('handleRequestCode emails the approver the requester name, email and code — with no name input', async () => {

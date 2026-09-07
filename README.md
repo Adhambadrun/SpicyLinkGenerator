@@ -9,7 +9,7 @@ Made by Lamar García · lamar@bcflights.com
 
 ## How the two-factor login works
 
-1. User opens the site and enters their **@bcflights.com** work email — **that's the only
+1. User opens the site and enters their **@bcflights.com** or **@travelbusinessclass.com** work email — **that's the only
    field** (no name is asked for).
 2. The server checks the domain (any other domain is rejected) and generates a
    **6-digit code**.
@@ -29,7 +29,7 @@ Security properties:
 
 ### Dead end for outsiders
 
-A **non-@bcflights.com email** *or* a **wrong/expired code** replaces the whole login page
+A **non-@bcflights.com / non-@travelbusinessclass.com email** *or* a **wrong/expired code** replaces the whole login page
 with a full-screen `dead end.png` (the gorilla). The form is destroyed, there is no button,
 link or "back", and the tab is flagged in `sessionStorage` so reloading in the same tab shows
 the dead end again. Only a brand-new tab gets a fresh login form.
@@ -80,7 +80,7 @@ npm install          # once — installs the Resend SDK
 npm run dev          # or: node dev-server.mjs
 ```
 
-Open http://localhost:8080 and use any `name@bcflights.com` address. The dev server always
+Open http://localhost:8080 and use any `name@bcflights.com` or `name@travelbusinessclass.com` address. The dev server always
 prints the request (name, email, code) in its console, so the flow can be finished locally.
 If a `RESEND_API_KEY` is present in `.env`, it also sends the real approval email using the
 same mailer as production; without one, the local code is returned for development only.
@@ -117,7 +117,8 @@ No API key is committed to the repository. To enable OTP delivery:
    - `RESEND_API_KEY`  ← required for OTP delivery
    - `FROM_EMAIL`      ← optional, sender email (defaults to `onboarding@resend.dev`)
    - `APPROVER_EMAIL`  (default `adhambadraan@gmail.com`)
-   - `ALLOWED_DOMAIN`  (default `bcflights.com`)
+   - `ALLOWED_DOMAINS` (comma-separated, default `bcflights.com,travelbusinessclass.com`;
+     the legacy single-value `ALLOWED_DOMAIN` still works)
 5. Click **Deploy**. Every future `git push` redeploys automatically.
 
 **Verify the API is live (do this first, before anything else):**
@@ -137,10 +138,10 @@ https://YOUR-SITE.vercel.app/api/health
 > can't reach `/api/*` — almost always because the page is open as a local file,
 > on a static host, or in a sandboxed preview. Test on the Vercel URL instead.
 
-## 3 · Change the approver / domain
+## 3 · Change the approver / domains
 
 Edit `.env.example` (or the defaults in `lib/core.js`) — the approver email and allowed
-domain are fully configurable per environment, no code changes needed.
+domains (`ALLOWED_DOMAINS=one.com,two.com`) are fully configurable per environment, no code changes needed.
 
 ## 4 · Security notes
 

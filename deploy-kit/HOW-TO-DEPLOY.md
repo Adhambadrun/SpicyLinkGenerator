@@ -2,7 +2,7 @@
 
 This sandbox can no longer push to GitHub (the session's PR was merged, which closed
 its GitHub access). Your live Vercel site is therefore still running the OLD login
-(the one that just prints "Only @bcflights.com emails are allowed."). That is exactly
+(the one that just prints "Only @bcflights.com or @travelbusinessclass.com emails are allowed."). That is exactly
 the screenshot you saw — it is not a bug in the new code, the new code simply isn't
 deployed yet.
 

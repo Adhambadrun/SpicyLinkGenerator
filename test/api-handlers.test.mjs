@@ -35,11 +35,12 @@ function stubRes() {
 const post = (body) => ({ method: 'POST', body });
 const get = () => ({ method: 'GET', headers: {} });
 
-test('api/request-code rejects a non-bcflights domain and a malformed body', async () => {
+test('api/request-code rejects a non-allowed domain and a malformed body', async () => {
   let res = stubRes();
   await requestCode(post({ email: 'someone@gmail.com' }), res);
   assert.equal(res.statusCode, 403);
   assert.match(res.body.error, /@bcflights\.com/);
+  assert.match(res.body.error, /@travelbusinessclass\.com/);
 
   res = stubRes();
   await requestCode(post('not json at all'), res);
