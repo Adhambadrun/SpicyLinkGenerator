@@ -89,7 +89,10 @@ without params) redirects to `/processing`; `schedulesresults` renders an empty 
 `cabin`, not `origin`/`destination`. Full table in `AA_ACCEPTANCE.md`. **No browser run has yet
 exercised BA's Search button** — that is what `--capture` and `--matrix` are for. Only a
 recorded run that reaches BA flight results *and* passes the passenger-form benchmark should
-move BA off the empty-form handoff.
+move BA off the empty-form handoff. `buildBAProcessOfferUrl` exists only for this tool's
+`--legacy` cases; building that URL is not evidence of reaching BA results or passenger details.
+The app itself only opens BA's empty search form (plus one unverified Google Flights search,
+labeled not BA) and asks the user to submit BA's search there.
 
 ## Privacy / redaction guarantees
 

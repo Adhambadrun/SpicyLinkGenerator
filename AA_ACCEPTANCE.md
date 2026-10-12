@@ -85,8 +85,8 @@ homepage. PSS vendor names or a Google Flights redirect do not substitute for th
 A third-party search may only ever be offered as a **clearly labeled alternative beside** the
 airline's own surface (button, note and toast all say so) — never as the airline link, never
 labeled as an airline booking, and never with a fare attached. BA is the worked example: its
-own search form is the airline link, and the per-cabin pre-filled Google Flights searches are
-labeled alternatives. Copy formats found in other public projects are **not** evidence; the two
+own search form is the airline link, and the single pre-filled Google Flights search is the
+labeled alternative. Copy formats found in other public projects are **not** evidence; the two
 BA formats found by code search on 2026-10-12 both land on `/processing` (rows 7–10 above).
 
 ### British Airways (BA) status — no pre-filled BA URL exists; BA's own (empty) search form is the handoff
@@ -149,13 +149,15 @@ renders instantly, no spinner, no geo-redirect to an empty widget):
   and a note that states (a) why nothing is pre-filled (the BLOCKED handoff + the ignored
   parameters, with the date), (b) **exactly what to type** — e.g. *“Fill “Flight 1” with
   CDG→LHR on 2026-10-30 (business, 1 adult) and remove the other rows.”*, or one row per O&D
-  slice for multi-city — and (c) *“No flight is selected and no fare is shown or claimed here.”*
-- `app.html` offers one clearly labeled button per represented cabin — for example,
-  **“Pre-filled Google Flights · Business (not BA)”** and **“Pre-filled Google Flights ·
-  Economy (not BA)”**. `ondSlicesWithCabin` collapses connections to one O&D slice and retains
-  each cabin present on that slice's legs; `gfSearchGroups` builds one URL per cabin, so no
-  single mixed-cabin Google Flights search is emitted. A mixed-cabin connection may appear
-  under each represented cabin and is not reproduced leg-for-leg. TFS field 9 selects seat
+  slice for multi-city — (c) that the user must submit BA's search and, if BA returns results,
+  select a flight there, because the link cannot open passenger details or payment directly —
+  and (d) *“No flight is selected and no fare is shown or claimed here.”*
+- `app.html` offers exactly **one** clearly labeled button, **“Pre-filled Google Flights (not
+  BA)”**. `gfSearchGroup` returns every collapsed O&D slice (`ondSlices`) with the itinerary's
+  most common cabin (`itinerarySearchCabin`: `segmentCabin` tallied over all legs, ties to the
+  higher cabin, FIRST > BUSINESS > PREMIUM-COACH > COACH), and the unchanged `gfUrl` builds
+  one URL from it. Google Flights accepts one cabin per search, so a mixed-cabin itinerary is
+  **not** preserved leg by leg — the note and toast say so. TFS field 9 selects seat
   class (1 economy, 2 premium economy, 3 business, 4 first); field 19 encodes trip type
   (1 round-trip, 2 one-way, 3 multi-city). Buttons, note and toast label the search as
   third-party, **not BA**, never an airline booking or a fare, and it is hidden for every
@@ -184,7 +186,7 @@ renders instantly, no spinner, no geo-redirect to an empty widget):
    never as a result.
 4. The **passenger-form + fare-match benchmark** above. BA has never reached step 3, so BA
    stays `SEARCH_ONLY`, never `PASS_PASSENGER_FORM_MATCHED_FARE`.
-5. Google Flights landing/results for the cabin-specific URLs. The TFS fields above are built
+5. Google Flights landing/results for the single alternative URL. The TFS fields above are built
    and pinned by unit tests, but this sandbox has not observed those generated URLs in a real
    browser; they remain third-party `search_unverified` alternatives, with no fare claimed.
    Test success is not a substitute for browser evidence.
