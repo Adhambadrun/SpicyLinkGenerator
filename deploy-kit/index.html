@@ -159,7 +159,7 @@
       setMsg('Verified — opening the app…', 'ok');
       // Per-tab proof of login: sessionStorage dies with the tab, so a closed
       // (or brand-new) tab must always sign in again.
-      try{ sessionStorage.setItem('slg_tab','1'); sessionStorage.setItem('slg_active', String(Date.now())); }catch(e){}
+      try{ sessionStorage.setItem('slg_tab','1'); }catch(e){}
       location.href = '/app.html';
     }catch(e){ serverDown(); }
     finally{ this.disabled = false; }

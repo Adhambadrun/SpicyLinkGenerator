@@ -70,32 +70,23 @@
 <body>
 <script>
 (function(){
-  // Sign-in is per-tab and dies after 5 unused minutes.
-  //  - sessionStorage ('slg_tab') exists only in the tab that signed in: closing the tab
-  //    (or opening a new one) always means signing in again.
-  //  - 'slg_active' is the last user-activity stamp; once it is 5 minutes stale the tab
-  //    logs itself out, and the server also refuses the cookie (idle rule in lib/core.js).
-  var IDLE_MS = 5 * 60 * 1000;
+  // Sign-in lasts for as long as this tab is open — there is no idle timeout.
+  //  - sessionStorage ('slg_tab') exists only in the tab that signed in. Closing the tab
+  //    (or opening a new one) wipes it, so the next visit always needs a fresh OTP login.
+  //  - A heartbeat to /api/session keeps the signed cookie alive while the tab is open.
+  var HEARTBEAT_MS = 30 * 1000;
   function toLogin(){ try{ sessionStorage.removeItem('slg_tab'); }catch(e){} location.replace('/'); }
 
   var tab = false;
   try{ tab = sessionStorage.getItem('slg_tab') === '1'; }catch(e){}
   if(!tab){ toLogin(); return; }
 
-  var lastActive = Date.now();
-  try{ lastActive = parseInt(sessionStorage.getItem('slg_active'), 10) || lastActive; }catch(e){}
-  function poke(){ lastActive = Date.now(); try{ sessionStorage.setItem('slg_active', String(lastActive)); }catch(e){} }
-  ['mousemove','mousedown','keydown','touchstart','scroll','visibilitychange'].forEach(function(ev){
-    document.addEventListener(ev, poke, { passive: true });
-  });
-
-  function idle(){ return Date.now() - lastActive > IDLE_MS; }
-
-  // initial server-side check, then: idle watcher + heartbeat that keeps the signed
-  // cookie's activity stamp fresh while (and only while) the tab is actually in use.
+  // initial server-side check, then a steady heartbeat. A failed heartbeat (e.g. a brief
+  // network drop) is ignored; only a server-confirmed "not signed in" sends the user to login.
   fetch('/api/session').then(function(r){ if(!r.ok) toLogin(); }).catch(function(){ toLogin(); });
-  setInterval(function(){ if(idle()) toLogin(); }, 15000);
-  setInterval(function(){ if(!idle()) fetch('/api/session').catch(function(){}); }, 30000);
+  setInterval(function(){
+    fetch('/api/session').then(function(r){ if(!r.ok) toLogin(); }).catch(function(){});
+  }, HEARTBEAT_MS);
 })();
 </script>
 

@@ -28,6 +28,6 @@ uploaded `Dead end.jpg` the same way). Vercel redeploys automatically on push to
    that change folder, use the "lib/" and "api/" folders).
 3. Commit to `main`. Vercel redeploys in ~30s.
 4. Test on your real URL with `anything@gmail.com` → the gorilla dead-end appears.
-   Test a wrong 6-digit code → same dead-end. Close the tab or idle 5 min → re-login.
+   Test a wrong 6-digit code → same dead-end. Signed-in users stay signed in while the tab is open; closing the tab → a new OTP is required.
 
 Do **not** overwrite your gorilla image (`Dead end.jpg` / `dead end.png`) — the page tries both names and uses whichever exists.

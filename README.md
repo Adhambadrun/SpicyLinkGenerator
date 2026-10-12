@@ -22,8 +22,8 @@ Made by Lamar García · lamar@bcflights.com
 Security properties:
 - Codes are HMAC-SHA256 signed and stateless — they cannot be forged or replayed,
   and they expire after **10 minutes** (max **5** wrong attempts).
-- Sessions are signed httpOnly cookies; the hard cap is 7 days but the **idle rule**
-  kills them after **5 unused minutes** (see below).
+- Sessions are signed httpOnly cookies. They **stay signed in for as long as the tab is open**
+  (no idle timeout); the only thing that ends a session is closing the tab (see below).
 - Domain lock is enforced server-side (not just in the browser).
 - The code is **never** returned to the browser in production — only the approver sees it.
 
@@ -34,13 +34,14 @@ with a full-screen `dead end.png` (the gorilla). The form is destroyed, there is
 link or "back", and the tab is flagged in `sessionStorage` so reloading in the same tab shows
 the dead end again. Only a brand-new tab gets a fresh login form.
 
-### Sessions: per-tab, and 5-minute idle
+### Sessions: stay signed in until the tab closes
 
-- Signing in marks **that tab** (`sessionStorage`), so **closing the tab — or opening a new
-  one — always requires logging in again**, even if the cookie is still valid.
-- While the app is open, user activity (mouse/keys/scroll/touch) refreshes a timestamp and a
-  heartbeat re-signs the cookie. If the tab sits **unused for 5 minutes**, the page logs
-  itself out, and the server also refuses the stale cookie (`reason: "idle"`).
+- Entering a valid code signs in **that tab** (`sessionStorage`). Once signed in, the user
+  stays signed in **indefinitely** — there is no idle timeout. While the app is open, a
+  heartbeat to `/api/session` (every 30 seconds) rolls the signed cookie's expiry forward.
+- **Closing the tab — or opening a new one — ends the session**, so the next visit always
+  asks for a **new OTP**. Only a new login code is required; nothing else prompts for one.
+- If the server reports the session is no longer valid, the page sends the user back to login.
 
 > This is a *human-in-the-loop* approval flow by design: nobody can get in unless
 > you personally hand them a fresh code.
