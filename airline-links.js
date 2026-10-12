@@ -1,17 +1,76 @@
 // One decision point for BOTH Generate and Copy. AA uses the historical metasearch
-// handoff; the app supplies its verbatim legacy builder so mixed itineraries keep every
-// leg. Other carriers use unverified prefills or their directory homepage.
+// handoff; BA uses the repository's legacy processOffer O&D builder (clearly labeled as
+// unverified because it does not pin flight numbers). Other carriers use unverified
+// direct-search prefills or their directory homepage.
 import { airlineOption, itineraryAirlines } from './airline-directory.js';
 import { buildAAMetasearchUrl } from './aa-handoff.js';
 
 function counts(p) {
   if(!p)return null;
   const adults=(p.adults||0)+(p.seniors||0)+(p.youths||0);
+  const youths=p.youths||0;
   const children=(p.children||0)+(p.infantsInSeat||0);
   const infants=p.infantsInLap||0;
-  if (![adults,children,infants].every(n => Number.isInteger(n) && n>=0 && n<=9) || adults<1 || infants>adults)
+  if (![adults,youths,children,infants].every(n => Number.isInteger(n) && n>=0 && n<=9) || adults<1 || infants>adults)
     return null;
-  return {adults,children,infants,total:adults+children+infants};
+  return {adults,youths,children,infants,total:adults+children+infants};
+}
+const BA_CABIN_MAP={
+  EI:{first:'FA',business:'JCDIZ',premium:'WE'},
+  BA:{first:'FA',business:'JCDRI',premium:'WET'},
+  AA:{first:'FAP',business:'JCDIR',premium:'W'},
+  UA:{first:'FA',business:'JCDZP',premium:'OAR'},
+  DL:{first:'FAPG',business:'JCDIZ',premium:'WSY'},
+  LH:{first:'FA',business:'JCDZP',premium:'GEN'},
+  EK:{first:'FAP',business:'JCDIOR',premium:'WE'},
+};
+function segmentCabin(carrier,cls) {
+  if(!cls)return 'COACH';
+  const c=String(cls).toUpperCase()[0];
+  const m=BA_CABIN_MAP[carrier];
+  if(m){if(m.first.includes(c))return 'FIRST';if(m.business.includes(c))return 'BUSINESS';if(m.premium.includes(c))return 'PREMIUM-COACH';return 'COACH';}
+  if('FAP'.includes(c))return 'FIRST';if('JCDIZR'.includes(c))return 'BUSINESS';if('WE'.includes(c))return 'PREMIUM-COACH';return 'COACH';
+}
+function baCabinCode(segs) {
+  const tally={};
+  for(const s of segs){const cab=segmentCabin(s.carrier,s.cls);tally[cab]=(tally[cab]||0)+1;}
+  let best='COACH',bestCount=-1,bestRank=-1;
+  for(const cab of Object.keys(tally)){
+    const rank=cab==='FIRST'?3:cab==='BUSINESS'?2:cab==='PREMIUM-COACH'?1:0;
+    if(tally[cab]>bestCount||(tally[cab]===bestCount&&rank>bestRank)){bestCount=tally[cab];bestRank=rank;best=cab;}
+  }
+  return best==='FIRST'?'F':best==='BUSINESS'?'C':best==='PREMIUM-COACH'?'W':'M';
+}
+function baSliceIndex(segs) {
+  const idx=[];let cur=0;
+  for(let i=0;i<segs.length;i++){
+    if(i>0){
+      const p=segs[i-1],s=segs[i];
+      const routeBreaks=p.dest!==s.origin;
+      const pa=new Date(p.ymd+'T00:00:00Z');pa.setUTCDate(pa.getUTCDate()+(p.plus?1:0));pa.setUTCHours(p.arrH||0,p.arrM||0,0,0);
+      const dp=new Date(s.ymd+'T00:00:00Z');dp.setUTCHours(s.depH||0,s.depM||0,0,0);
+      const gap=(dp-pa)/60000;
+      if(routeBreaks||gap>1440)cur++;
+    }
+    idx.push(cur);
+  }
+  return idx;
+}
+export function buildBAProcessOfferUrl(segments, passengers) {
+  const c=counts(passengers);
+  if (!c || !Array.isArray(segments) || !segments.length ||
+      segments.some(s=>!/^[A-Z]{3}$/.test(s?.origin||'') || !/^[A-Z]{3}$/.test(s?.dest||'') || !/^\d{4}-\d\d-\d\d$/.test(s?.ymd||'')))
+    throw new Error('BA processOffer URL requires valid segments and passenger counts.');
+  const idx=baSliceIndex(segments);
+  const journeys=[];let cur=-1;
+  for(let i=0;i<segments.length;i++){
+    if(idx[i]!==cur){cur=idx[i];journeys.push({o:segments[i].origin,d:segments[i].dest,date:segments[i].ymd});}
+    else journeys[journeys.length-1].d=segments[i].dest;
+  }
+  const onds=journeys.map(j=>`${j.o}-${j.d}_${j.date}`).join(',');
+  return `https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=${onds}`+
+    `&ad=${c.adults}&yad=${c.youths}&ch=${c.children}&inf=${c.infants}`+
+    `&cabin=${baCabinCode(segments)}&flex=LOWEST&ond=${journeys.length}`;
 }
 function shape(segs) {
   if(segs.length===1)return 'oneWay';
@@ -42,14 +101,11 @@ function searchUrl(code,segs,p) {
     if(type==='roundTrip')u.searchParams.set('r',segs[1].ymd);
     return u.href;
   }
-  // BA's legacy processOffer?onds=... builder in app.html omits flight numbers, carriers,
-  // booking classes, departure times, and connection airports, collapses mixed cabins, and
-  // has not been verified on britishairways.com. Keep BA on the homepage fallback until tested.
   return null;
 }
 
 /** Returns a descriptive outbound link, never a fabricated fare or session. */
-export function resolveAirlineLink(segments, selectedCarrier, passengers, {buildAAUrl=buildAAMetasearchUrl}={}) {
+export function resolveAirlineLink(segments, selectedCarrier, passengers, {buildAAUrl=buildAAMetasearchUrl, buildBAUrl=buildBAProcessOfferUrl}={}) {
   const options=itineraryAirlines(segments);
   const option=options.find(o=>o.carrier===selectedCarrier);
   if (!option) return {url:null,kind:'unsupported',label:'No airline selected',note:'Choose a carrier in this itinerary.'};
@@ -62,6 +118,15 @@ export function resolveAirlineLink(segments, selectedCarrier, passengers, {build
         label:'Open AA metasearch link',
         note:'The historical AA metasearch URL includes every itinerary leg; non-AA-marketed flights may not be pinned, and no live fare is verified.'};
     } catch(e) { return fallback(`AA handoff cannot safely encode this itinerary: ${e.message}`); }
+  }
+  if (selectedCarrier==='BA') {
+    try {
+      const url=buildBAUrl(segments,passengers);
+      if (!url) throw new Error('empty BA URL');
+      return {url,kind:'search_unverified',
+        label:'Open BA offer search',
+        note:'The legacy BA processOffer URL encodes O&D slices, dates, cabin and passengers only; flight numbers and non-BA legs are NOT preselected, and no live fare is verified.'};
+    } catch(e) { return fallback(`BA handoff cannot safely encode this itinerary: ${e.message}`); }
   }
   if (options.length!==1) return fallback('Multiple marketing carriers: a single airline may not sell this entire itinerary.');
   const url=searchUrl(selectedCarrier,segments,passengers);

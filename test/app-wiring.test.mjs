@@ -105,7 +105,7 @@ test('mixed itinerary: selecting AA generates and copies the original URL with e
   assert.match(elements.get('link-note').textContent,/Multiple marketing/);
 });
 
-test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, falls back safely for BA, and preserves all 6 legs for AA', async () => {
+test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, wires BA processOffer search, and preserves all 6 legs for AA', async () => {
   const gds=[
     '1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E',
     '2 AA 731I 30OCT F LHRCLT*SS1   955A  250P /DCAA /E',
@@ -114,11 +114,12 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, falls b
     '5 AA1770O 21JAN Q STIMIA*SS1   720A  846A /DCAA /E',
     '6 AA 112O 21JAN Q MIABCN*SS1   415P  705A  22JAN F /DCAA /E',
   ].join('\n');
+  const expectedBA='https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-MSY_2026-10-30,MIA-STI_2026-10-31,STI-BCN_2027-01-21&ad=1&yad=0&ch=0&inf=0&cabin=C&flex=LOWEST&ond=3';
 
   for (const nowIso of ['2026-10-12T12:00:00Z', '2026-01-10T12:00:00Z']) {
     const {elements,window,opened,copied}=await app({nowIso});
     elements.get('gds').value=gds;
-    // Leg 1 is BA, so BA is selected initially and resolves to the BA homepage fallback.
+    // Leg 1 is BA, so BA is selected initially and resolves to the legacy BA processOffer URL.
     await window.openSelectedLink();
     await window.copyLink();
     assert.equal(elements.get('warn').textContent,'');
@@ -134,11 +135,10 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, falls b
       '  AA112     O ECONOMY          MIA->BCN  2027-01-21  16:15 -> 07:05 (+1)  MARRIED',
     ]);
 
-    assert.equal(opened[0],'https://www.britishairways.com/');
-    assert.equal(copied[0],'https://www.britishairways.com/');
-    assert.doesNotMatch(opened[0],/processOffer|onds=/);
-    assert.equal(elements.get('generate-link').textContent,'Visit British Airways website');
-    assert.match(elements.get('link-note').textContent,/Multiple marketing carriers/);
+    assert.equal(opened[0],expectedBA);
+    assert.equal(copied[0],expectedBA);
+    assert.equal(elements.get('generate-link').textContent,'Open BA offer search');
+    assert.match(elements.get('link-note').textContent,/NOT preselected/);
 
     // Switch dropdown from BA (option 0) to AA (option 1).
     const menu=elements.get('airline-picker').children[0].children[1];

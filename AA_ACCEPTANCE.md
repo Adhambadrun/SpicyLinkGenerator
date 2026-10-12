@@ -70,27 +70,27 @@ its site or an authorized partner offers a documented/observed handoff. Test the
 itinerary and live price; record failures and fall back to a clearly labeled search or
 homepage. PSS vendor names or a Google Flights redirect do not substitute for this test.
 
-### British Airways (BA) status — homepage fallback only
+### British Airways (BA) status — unverified `processOffer` O&D search handoff
 
-- **Observed mixed-carrier behavior**: Selecting `BA` on a mixed `BA` + `AA` multi-city
-  itinerary resolves to `https://www.britishairways.com/` (`kind: 'homepage'`), which BA
-  geo-redirects to the visitor's regional homepage (for example,
-  `/travel/home/public/en_eg/`) with an empty search form. That is this app's homepage
-  fallback, not proof for or against a BA deep link.
-- **Why legacy `baUrl` (`processOffer?onds=…`) is not enabled**: `app.html` retains an unused
-  `/travel/book/public/en_gb/processOffer?onds=…` helper that only sends slice origin/destination
-  and date (`onds`), passenger counts (`ad`, `yad`, `ch`, `inf`), a single dominant cabin code
-  (`F`/`C`/`W`/`M`), `flex=LOWEST`, and `ond`. It drops flight numbers, marketing carriers,
-  booking classes, departure times, and connection airports, and has not been verified in a
-  live browser on `britishairways.com`.
-- **Manual test needed before coding any BA handoff**:
-  1. Test a **BA-only direct one-way** and **BA-only round-trip** on `britishairways.com` to
-     observe whether BA exposes a stable public search or flight-selection URL and what
-     parameters/landing step it actually reaches.
-  2. Test **BA connections and multi-city** (up to 6 O&D slices) and **passenger counts**
+- **Previous homepage fallback**: Previously, selecting `BA` on a mixed `BA` + `AA` multi-city
+  itinerary resolved to `https://www.britishairways.com/` (`kind: 'homepage'`), which BA
+  geo-redirected to the visitor's regional homepage (for example,
+  `/travel/home/public/en_eg/`) with an empty search form.
+- **Wired legacy `baUrl` (`processOffer?onds=…`)**: Selecting `BA` now delegates to `app.html`'s
+  legacy `/travel/book/public/en_gb/processOffer?onds=…` builder (`kind: 'search_unverified'`,
+  label `Open BA offer search`). It encodes only slice origin/destination and date (`onds`),
+  passenger counts (`ad`, `yad`, `ch`, `inf`), a single dominant cabin code (`F`/`C`/`W`/`M`),
+  `flex=LOWEST`, and `ond`. It does **not** pin flight numbers, marketing carriers, booking
+  classes, departure times, or intermediate connection airports.
+- **Manual browser verification needed on `britishairways.com`**:
+  1. Test **BA-only direct one-way** and **BA-only round-trip** with `Open BA offer search` to
+     observe whether `/travel/book/public/en_gb/processOffer?onds=…` loads BA flight results or
+     redirects back to `/travel/home/public/en_*`.
+  2. Test **BA connections and multi-city** (up to 6 legs / 3 O&D slices) and **passenger counts**
      (adults, youths, children, lap infants).
-  3. Test **mixed BA + AA (oneworld)** itineraries to determine whether `britishairways.com`
-     can price/book AA-marketed non-UK slices or only BA-marketed/UK-touching journeys.
+  3. Test **mixed BA + AA (oneworld)** itineraries (`CDG-MSY_2026-10-30,MIA-STI_2026-10-31,STI-BCN_2027-01-21`)
+     to determine whether `britishairways.com` accepts multi-city O&D slices containing non-UK
+     AA routes or requires a different BA URL format.
   4. Record redacted landing URLs (strip session/cart/journey tokens) and screenshots without
      submitting passenger PII or payment.
 

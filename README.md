@@ -28,14 +28,13 @@ For AA-selected itineraries, Generate copies and opens the historical `/goto/met
 URL; Copy copies the same URL. The original URL format is unchanged, but its presence does not
 verify flight selection, availability or price. Transient post-redirect AA parameters (such as
 `/airfare-sales/ui/passenger-ui/` query IDs) are session-specific and are never stored in code,
-tests or docs. Delta and United direct one-way/round-trip itineraries have *unverified search
-prefills* (not flight selection or checkout). British Airways (`BA`) and all other carriers use
-their own directory homepage (`https://www.britishairways.com/`, which BA geo-redirects to a
-regional homepage such as `/travel/home/public/en_gb/` or `/travel/home/public/en_eg/`). The
-legacy unused `baUrl` (`processOffer?onds=…`) helper in `app.html` is **not** wired in because
-it strips flight numbers, marketing carriers, booking classes, departure times and intermediate
-connection airports, collapses mixed cabins into one letter, and has not been live-verified on
-`britishairways.com`. No fabricated price or passenger details are passed to these sites.
+tests or docs. For BA-selected itineraries, Generate and Copy use the repository's legacy
+`baUrl` (`/travel/book/public/en_gb/processOffer?onds=…`) O&D search builder, clearly labeled as
+`search_unverified` because it encodes only slice origin/destination, dates, dominant cabin and
+passenger counts (flight numbers and non-BA legs are **not** preselected). Delta and United
+direct one-way/round-trip itineraries also have *unverified search prefills* (not flight
+selection or checkout). All other carriers use their own directory homepage. No fabricated price
+or passenger details are passed to these sites.
 Airline marks are used for identification only; see
 [asset attribution](assets/airline-logos/ATTRIBUTION.md). See
 [AA_ACCEPTANCE.md](AA_ACCEPTANCE.md) for the live passenger-form + fare-match test.

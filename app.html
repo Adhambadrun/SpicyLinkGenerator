@@ -623,7 +623,7 @@ async function copyJson(){
 // Both actions resolve the same selected carrier and the same handoff.
 let selectedCarrier='';
 function selectedLinkFor(segments,carrier=selectedCarrier){
-  return resolveAirlineLink(segments,carrier,pax,{buildAAUrl:aaMetaUrl});
+  return resolveAirlineLink(segments,carrier,pax,{buildAAUrl:aaMetaUrl,buildBAUrl:baUrl});
 }
 function selectedLink(){
   ensureCurrentInput();

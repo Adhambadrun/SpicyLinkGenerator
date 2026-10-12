@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveAirlineLink } from '../airline-links.js';
+import { buildBAProcessOfferUrl, resolveAirlineLink } from '../airline-links.js';
 import { buildAAMetasearchUrl } from '../aa-handoff.js';
 
 const pax={adults:1,seniors:0,youths:0,children:0,infantsInSeat:0,infantsInLap:0};
@@ -57,22 +57,22 @@ test('AA selection can preserve all mixed-carrier legs via the original metasear
   assert.equal(resolveAirlineLink(itinerary,'DL',pax).url,null);
 });
 
-test('mixed BA/AA 6-leg itinerary: BA falls back to homepage while AA preserves all 6 legs in order', () => {
+test('mixed BA/AA 6-leg itinerary: BA uses the legacy processOffer O&D builder while AA preserves all 6 legs in order', () => {
   const itinerary=[
-    {carrier:'BA',num:'323',cls:'J',origin:'CDG',dest:'LHR',ymd:'2026-10-30',depH:7,depM:5},
-    {carrier:'AA',num:'731',cls:'I',origin:'LHR',dest:'CLT',ymd:'2026-10-30',depH:9,depM:55},
-    {carrier:'AA',num:'2615',cls:'I',origin:'CLT',dest:'MSY',ymd:'2026-10-30',depH:16,depM:53},
-    {carrier:'AA',num:'1917',cls:'I',origin:'MIA',dest:'STI',ymd:'2026-10-31',depH:12,depM:5},
-    {carrier:'AA',num:'1770',cls:'O',origin:'STI',dest:'MIA',ymd:'2027-01-21',depH:7,depM:20},
-    {carrier:'AA',num:'112',cls:'O',origin:'MIA',dest:'BCN',ymd:'2027-01-21',depH:16,depM:15},
+    {carrier:'BA',num:'323',cls:'J',origin:'CDG',dest:'LHR',ymd:'2026-10-30',depH:7,depM:5,arrH:7,arrM:35,plus:false},
+    {carrier:'AA',num:'731',cls:'I',origin:'LHR',dest:'CLT',ymd:'2026-10-30',depH:9,depM:55,arrH:14,arrM:50,plus:false},
+    {carrier:'AA',num:'2615',cls:'I',origin:'CLT',dest:'MSY',ymd:'2026-10-30',depH:16,depM:53,arrH:18,arrM:0,plus:false},
+    {carrier:'AA',num:'1917',cls:'I',origin:'MIA',dest:'STI',ymd:'2026-10-31',depH:12,depM:5,arrH:14,arrM:15,plus:false},
+    {carrier:'AA',num:'1770',cls:'O',origin:'STI',dest:'MIA',ymd:'2027-01-21',depH:7,depM:20,arrH:8,arrM:46,plus:false},
+    {carrier:'AA',num:'112',cls:'O',origin:'MIA',dest:'BCN',ymd:'2027-01-21',depH:16,depM:15,arrH:7,arrM:5,plus:true},
   ];
   const ba=resolveAirlineLink(itinerary,'BA',pax);
-  assert.equal(ba.kind,'homepage');
-  assert.equal(ba.url,'https://www.britishairways.com/');
-  assert.equal(ba.label,'Visit British Airways website');
-  assert.match(ba.note,/Multiple marketing carriers/);
-  assert.match(ba.note,/opens a homepage, not a selected flight or live fare/);
-  assert.doesNotMatch(ba.url,/processOffer|onds=/);
+  assert.equal(ba.kind,'search_unverified');
+  assert.equal(ba.url,buildBAProcessOfferUrl(itinerary,pax));
+  assert.equal(ba.url,'https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-MSY_2026-10-30,MIA-STI_2026-10-31,STI-BCN_2027-01-21&ad=1&yad=0&ch=0&inf=0&cabin=C&flex=LOWEST&ond=3');
+  assert.equal(ba.label,'Open BA offer search');
+  assert.match(ba.note,/NOT preselected/);
+  assert.match(ba.note,/no live fare is verified/);
 
   let encodedSegments;
   const aa=resolveAirlineLink(itinerary,'AA',pax,{
@@ -89,16 +89,16 @@ test('mixed BA/AA 6-leg itinerary: BA falls back to homepage while AA preserves 
   ]);
 });
 
-test('BA-only itineraries also stay on the homepage fallback until a BA handoff is live-verified', () => {
+test('BA processOffer builder encodes one-way and round-trip O&D slices and falls back to homepage on invalid passenger counts', () => {
   const oneWay=[leg('BA','CDG','LHR','2026-10-30')];
   const roundTrip=[leg('BA','CDG','LHR','2026-10-30'),leg('BA','LHR','CDG','2026-11-06')];
-  for(const trip of [oneWay,roundTrip]) {
-    const ba=resolveAirlineLink(trip,'BA',pax);
-    assert.equal(ba.kind,'homepage');
-    assert.equal(ba.url,'https://www.britishairways.com/');
-    assert.match(ba.note,/No tested airline-specific handoff is available yet/);
-    assert.doesNotMatch(ba.url,/processOffer|onds=/);
-  }
+  const baOneWay=resolveAirlineLink(oneWay,'BA',pax);
+  assert.equal(baOneWay.kind,'search_unverified');
+  assert.equal(baOneWay.url,'https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-LHR_2026-10-30&ad=1&yad=0&ch=0&inf=0&cabin=M&flex=LOWEST&ond=1');
+  const baRoundTrip=resolveAirlineLink(roundTrip,'BA',pax);
+  assert.equal(baRoundTrip.kind,'search_unverified');
+  assert.equal(baRoundTrip.url,'https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-LHR_2026-10-30,LHR-CDG_2026-11-06&ad=1&yad=0&ch=0&inf=0&cabin=M&flex=LOWEST&ond=2');
+  assert.equal(resolveAirlineLink(oneWay,'BA',{...pax,adults:0}).kind,'homepage');
 });
 
 test('airlines without specific connectors use their own homepages, unknown carriers disable the link', () => {
