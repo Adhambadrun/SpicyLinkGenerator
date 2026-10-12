@@ -7,8 +7,7 @@
 process.env.DEV_MODE = '1';
 delete process.env.RESEND_API_KEY;
 delete process.env.AUTH_SECRET;
-// The sender is derived from the allowed domains when FROM_EMAIL is unset, so the
-// assertions below need the built-in default list rather than whatever the machine has.
+// The assertions below rely on the built-in defaults rather than whatever the machine has.
 delete process.env.ALLOWED_DOMAINS;
 delete process.env.ALLOWED_DOMAIN;
 delete process.env.FROM_EMAIL;
@@ -130,11 +129,11 @@ test('api/session is 401 without a cookie, api/health is ok and reports mailConf
   assert.equal(h.statusCode, 200);
   assert.equal(h.body.ok, true);
   assert.equal(h.body.mailConfigured, false);
-  // Without an explicit FROM_EMAIL the sender is the first allowed sign-in domain, never
-  // the resend.dev sandbox address (which can only email the Resend account owner).
-  assert.equal(h.body.mailFrom, 'Spicy Link Generator <login@bcflights.com>');
+  // Without an explicit FROM_EMAIL the sender is onboarding@resend.dev — never an
+  // address on one of the sign-in domains.
+  assert.equal(h.body.mailFrom, 'Spicy Link Generator <onboarding@resend.dev>');
   assert.equal(h.body.mailCanSendToUsers, false, 'no API key yet, so nothing can be sent');
-  assert.equal(h.body.setupHint, undefined);
+  assert.match(h.body.setupHint, /resend\.com\/domains/);
 });
 
 test('api/health warns when the sender is still the resend.dev sandbox address', async () => {

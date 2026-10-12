@@ -6,7 +6,6 @@ import {
   isTestSender,
   mailConfig,
   missingMailConfig,
-  senderFromAllowedDomain,
   senderSetupHint,
   sendLoginCodeEmail,
 } from '../lib/mailer.js';
@@ -18,24 +17,20 @@ test('mailConfig trims environment values and requires a key', () => {
 
   const defaultConfig = mailConfig({});
   assert.equal(defaultConfig.apiKey, '');
-  assert.equal(defaultConfig.fromEmail, 'Spicy Link Generator <login@bcflights.com>');
+  assert.equal(defaultConfig.fromEmail, DEFAULT_FROM_EMAIL);
 
   const disabledConfig = mailConfig({ RESEND_API_KEY: 'disabled', FROM_EMAIL: 'disabled' });
   assert.equal(disabledConfig.apiKey, '');
   assert.equal(disabledConfig.fromEmail, '');
 });
 
-test('the sender defaults to the first allowed sign-in domain, not the resend.dev sandbox', () => {
-  // The sandbox address can only email the Resend account owner, so sign-in codes sent
-  // from it always bounce — the allowed domain is the sender that can actually work.
-  assert.equal(senderFromAllowedDomain({ ALLOWED_DOMAINS: 'one.com, two.org' }), 'Spicy Link Generator <login@one.com>');
-  assert.equal(senderFromAllowedDomain({ ALLOWED_DOMAIN: 'legacy.com' }), 'Spicy Link Generator <login@legacy.com>');
-  assert.equal(mailConfig({ ALLOWED_DOMAINS: 'one.com' }).fromEmail, 'Spicy Link Generator <login@one.com>');
-  // An explicit FROM_EMAIL always wins over the derived domain.
+test('the sender defaults to onboarding@resend.dev and is never derived from the sign-in domains', () => {
+  assert.equal(DEFAULT_FROM_EMAIL, 'Spicy Link Generator <onboarding@resend.dev>');
+  // ALLOWED_DOMAINS only decides who may sign in — it must not become the sender.
+  assert.equal(mailConfig({ ALLOWED_DOMAINS: 'one.com, two.org' }).fromEmail, DEFAULT_FROM_EMAIL);
+  assert.equal(mailConfig({ ALLOWED_DOMAIN: 'legacy.com' }).fromEmail, DEFAULT_FROM_EMAIL);
+  // An explicit FROM_EMAIL always wins.
   assert.equal(mailConfig({ ALLOWED_DOMAINS: 'one.com', FROM_EMAIL: 'login@two.org' }).fromEmail, 'login@two.org');
-  // The sandbox address is still the last resort when no domain is available at all.
-  assert.equal(senderFromAllowedDomain({}), 'Spicy Link Generator <login@bcflights.com>');
-  assert.ok(DEFAULT_FROM_EMAIL.includes('onboarding@resend.dev'));
 });
 
 test('the sandbox sender is detected and explained in one short, actionable sentence', () => {
