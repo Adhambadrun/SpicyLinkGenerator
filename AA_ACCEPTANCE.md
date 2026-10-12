@@ -85,9 +85,9 @@ homepage. PSS vendor names or a Google Flights redirect do not substitute for th
 A third-party search may only ever be offered as a **clearly labeled alternative beside** the
 airline's own surface (button, note and toast all say so) — never as the airline link, never
 labeled as an airline booking, and never with a fare attached. BA is the worked example: its
-own search form is the airline link, and the pre-filled Google Flights search is the labeled
-alternative. Copy formats found in other public projects are **not** evidence; the two BA
-formats found by code search on 2026-10-12 both land on `/processing` (rows 7–10 above).
+own search form is the airline link, and the per-cabin pre-filled Google Flights searches are
+labeled alternatives. Copy formats found in other public projects are **not** evidence; the two
+BA formats found by code search on 2026-10-12 both land on `/processing` (rows 7–10 above).
 
 ### British Airways (BA) status — no pre-filled BA URL exists; BA's own (empty) search form is the handoff
 
@@ -150,11 +150,16 @@ renders instantly, no spinner, no geo-redirect to an empty widget):
   parameters, with the date), (b) **exactly what to type** — e.g. *“Fill “Flight 1” with
   CDG→LHR on 2026-10-30 (business, 1 adult) and remove the other rows.”*, or one row per O&D
   slice for multi-city — and (c) *“No flight is selected and no fare is shown or claimed here.”*
-- `app.html` offers a second, clearly labeled button — **“Pre-filled Google Flights search
-  (not BA)”** — built by the existing `gfUrl` from the **collapsed O&D slices**
-  (`ondSlices`, exported from `airline-links.js`), so a connection is one row and never two
-  one-way searches. It is labeled a third-party search everywhere it appears (button, note,
-  toast) and is hidden for every carrier that has its own handoff.
+- `app.html` offers one clearly labeled button per represented cabin — for example,
+  **“Pre-filled Google Flights · Business (not BA)”** and **“Pre-filled Google Flights ·
+  Economy (not BA)”**. `ondSlicesWithCabin` collapses connections to one O&D slice and retains
+  each cabin present on that slice's legs; `gfSearchGroups` builds one URL per cabin, so no
+  single mixed-cabin Google Flights search is emitted. A mixed-cabin connection may appear
+  under each represented cabin and is not reproduced leg-for-leg. TFS field 9 selects seat
+  class (1 economy, 2 premium economy, 3 business, 4 first); field 19 encodes trip type
+  (1 round-trip, 2 one-way, 3 multi-city). Buttons, note and toast label the search as
+  third-party, **not BA**, never an airline booking or a fare, and it is hidden for every
+  carrier that has its own handoff.
 - The **O&D slice gate is retained** (`baSliceIndex`, `BA_MAX_SLICES = 2`,
   `baUnsupportedSlices`): 3+ slices still explain the one-way/round-trip limitation in the
   note, and `buildBAProcessOfferUrl` still refuses 3+ slices defensively.
@@ -179,13 +184,24 @@ renders instantly, no spinner, no geo-redirect to an empty widget):
    never as a result.
 4. The **passenger-form + fare-match benchmark** above. BA has never reached step 3, so BA
    stays `SEARCH_ONLY`, never `PASS_PASSENGER_FORM_MATCHED_FARE`.
+5. Google Flights landing/results for the cabin-specific URLs. The TFS fields above are built
+   and pinned by unit tests, but this sandbox has not observed those generated URLs in a real
+   browser; they remain third-party `search_unverified` alternatives, with no fare claimed.
+   Test success is not a substitute for browser evidence.
+
+**Sandbox limitation for this turn (2026-10-12).** No new `--capture`, `M3`, `--matrix` or
+`--legacy` browser result is recorded here. The checkout has no Playwright/Chromium install,
+and this sandbox cannot reach ba.com; therefore no BA result, captured URL or session-hypothesis
+verdict was produced. The existing `BLOCKED` / `SEARCH_ONLY` outcomes above remain unchanged;
+this is not a new browser observation. Run the commands below on a machine with a real browser
+and internet access, then paste only the redacted report results.
 
 **How to re-test in one command (any machine with a normal browser and internet access)**
 
 ```bash
 npm install --no-save --no-package-lock playwright && npx playwright install chromium
 node tools/ba-live-probe.mjs --dry-run --capture --matrix --legacy   # review the case list, no browser
-node tools/ba-live-probe.mjs --headful --capture            # PRIORITY 1: capture BA's own prefill URL
+node tools/ba-live-probe.mjs --headful --capture --seconds=150  # PRIORITY 1: capture BA's own prefill URL
 node tools/ba-live-probe.mjs --headful --matrix --seconds=150  # PRIORITY 2: legacy-entry variant matrix
 node tools/ba-live-probe.mjs --headful --legacy --seconds=150  # re-measure the BLOCKED handoff
 ```

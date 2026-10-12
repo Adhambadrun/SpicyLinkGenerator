@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { parseMatrixInput } from '../booking-tools.js';
 import { airlineOption, itineraryAirlines } from '../airline-directory.js';
-import { ondSlices, resolveAirlineLink } from '../airline-links.js';
+import { gfSearchGroups, ondSlicesWithCabin, resolveAirlineLink } from '../airline-links.js';
 import { airportLocalTimeMs } from '../aa-handoff.js';
 
 const BA_SEARCH_FORM='https://www.britishairways.com/travel/book/public/en_gb/flightSearch';
@@ -40,6 +40,28 @@ function historicalAAUrl(carriers) {
     '0','0','0','0','0','0','0','0.00','1',legs,flights];
   return 'https://www.aa.com/goto/metasearch?ITEN='+encodeURIComponent(parts.join(','));
 }
+function googleFlightsScalarFields(url) {
+  const encoded=new URL(url).searchParams.get('tfs').replace(/-/g,'+').replace(/_/g,'/');
+  const bytes=Buffer.from(encoded,'base64');let offset=0;const fields=new Map();
+  function readVarint(){
+    let value=0,shift=0;
+    while(offset<bytes.length){
+      const byte=bytes[offset++];value|=(byte&0x7f)<<shift;
+      if(!(byte&0x80))return value>>>0;
+      shift+=7;
+    }
+    throw new Error('Truncated Google Flights protobuf varint');
+  }
+  while(offset<bytes.length){
+    const key=readVarint(),number=key>>>3,wire=key&7;
+    if(wire===0){const values=fields.get(number)||[];values.push(readVarint());fields.set(number,values);}
+    else if(wire===1)offset+=8;
+    else if(wire===2){const length=readVarint();offset+=length;}
+    else if(wire===5)offset+=4;
+    else throw new Error(`Unsupported Google Flights protobuf wire type ${wire}`);
+  }
+  return fields;
+}
 async function app({nowIso='2026-10-12T12:00:00Z'}={}) {
   const html=await readFile(new URL('../app.html',import.meta.url),'utf8');
   const match=html.match(/<script type="module">([\s\S]*?)<\/script>/);
@@ -59,7 +81,7 @@ async function app({nowIso='2026-10-12T12:00:00Z'}={}) {
     static now(){return new Date(nowIso).getTime();}
   }
   const context=vm.createContext({document,window,parseMatrixInput,airlineOption,itineraryAirlines,
-    resolveAirlineLink,ondSlices,airportLocalTimeMs,navigator:{clipboard:{writeText:async text=>copied.push(text)}},
+    resolveAirlineLink,ondSlicesWithCabin,gfSearchGroups,airportLocalTimeMs,navigator:{clipboard:{writeText:async text=>copied.push(text)}},
     localStorage:{getItem:()=> '1',setItem(){}},setInterval(){},setTimeout(){},
     TextEncoder,Date:FixedDate,URL,console,btoa,atob});
   vm.runInContext(script,context,{filename:'app.html'});
@@ -203,8 +225,12 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, BA fall
     assert.match(elements.get('link-note').textContent,/needs 3 O&D slices/);
     assert.match(elements.get('link-note').textContent,/opens EMPTY/);
     assert.match(elements.get('link-note').textContent,/CDG→MSY on 2026-10-30, MIA→STI on 2026-10-31, STI→BCN on 2027-01-21/);
-    // The alternative third-party search is offered next to BA's empty form, clearly labeled.
-    assert.equal(elements.get('alternative-search').hidden,false);
+    // Per-cabin third-party searches are offered next to BA's empty form, clearly labeled.
+    const alternatives=elements.get('alternative-searches');
+    assert.equal(alternatives.hidden,false);
+    assert.deepEqual(alternatives.children.map(button=>button.dataset.cabin),['BUSINESS','COACH']);
+    assert.match(alternatives.children[0].textContent,/Google Flights.*Business.*not BA/i);
+    assert.match(alternatives.children[1].textContent,/Google Flights.*Economy.*not BA/i);
     assert.match(elements.get('link-note').textContent,/NOT a BA booking/);
 
     // Switch dropdown from BA (option 0) to AA (option 1).
@@ -265,9 +291,28 @@ test('round-trip BA-only GDS itinerary also gets BA\u2019s empty search form, ne
   assert.match(note,/CDG→LHR on 2026-10-30, LHR→CDG on 2026-11-06 \(business, 1 adult\)/);
   assert.match(note,/remove the third row/);
   assert.doesNotMatch(opened[0],/processOffer|search-journey-id|cid=|passenger-ui/i);
+  const alternatives=elements.get('alternative-searches');
+  assert.equal(alternatives.hidden,false);
+  assert.equal(alternatives.children.length,1);
+  await alternatives.children[0].events.click();
+  const fields=googleFlightsScalarFields(opened[1]);
+  assert.deepEqual(fields.get(9),[3],'business cabin uses Google Flights seat class 3');
+  assert.deepEqual(fields.get(19),[1],'reciprocal two-slice itinerary uses the round-trip trip type');
 });
 
-test('BA offers a clearly labeled pre-filled third-party search carrying every O&D slice', async () => {
+test('Google Flights TFS field 9 maps economy, premium economy, business, and first to the verified seat classes', async () => {
+  for(const [bookingCode,seatClass] of [['Y',1],['W',2],['J',3],['F',4]]){
+    const {elements,window,opened}=await app();
+    elements.get('gds').value=`1 BA 323${bookingCode} 30OCT F CDGLHR SS1   705A  735A /DCBA /E`;
+    await window.openSelectedLink();
+    const alternatives=elements.get('alternative-searches');
+    assert.equal(alternatives.children.length,1,`${bookingCode} should produce one cabin-specific search`);
+    await alternatives.children[0].events.click();
+    assert.deepEqual(googleFlightsScalarFields(opened[1]).get(9),[seatClass],`booking code ${bookingCode}`);
+  }
+});
+
+test('BA offers clearly labeled pre-filled Google Flights searches split by cabin', async () => {
   const {elements,window,opened,copied}=await app();
   elements.get('gds').value=[
     '1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E',
@@ -277,30 +322,53 @@ test('BA offers a clearly labeled pre-filled third-party search carrying every O
     '5 AA1770O 21JAN Q STIMIA*SS1   720A  846A /DCAA /E',
     '6 AA 112O 21JAN Q MIABCN*SS1   415P  705A  22JAN F /DCAA /E',
   ].join('\n');
-  // Leg 1 is BA, so BA is selected: the primary button opens BA's own empty form and the
-  // alternative search is offered beside it.
+  // Leg 1 is BA, so BA is selected: the primary button opens BA's own empty form and
+  // the clearly labeled per-cabin alternatives are offered beside it.
   await window.openSelectedLink();
   assert.equal(opened[0],BA_SEARCH_FORM);
-  assert.equal(elements.get('alternative-search').hidden,false);
-  assert.equal(elements.get('alternative-search').disabled,false);
-  await window.openAlternativeSearch();
-  assert.equal(opened.length,2);
-  assert.equal(copied[0],opened[1]);
-  const url=new URL(opened[1]);
-  assert.equal(url.origin,'https://www.google.com');
-  assert.equal(url.pathname,'/travel/flights/search');
-  const tfs=Buffer.from(url.searchParams.get('tfs').replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('latin1');
-  // Collapsed O&D slices only: CDG-MSY, MIA-STI, STI-BCN — a connection is one row, not two.
-  for(const needle of ['CDG','MSY','MIA','STI','BCN','2026-10-30','2026-10-31','2027-01-21'])
-    assert.ok(tfs.includes(needle),'third-party payload must carry '+needle);
-  assert.equal((tfs.match(/LHR/g)||[]).length,0,'a connection leg must not become its own search row');
-  assert.doesNotMatch(opened[1],/processOffer|search-journey-id|cid=|passenger-ui/i);
-  // Switching to AA hides the alternative: AA's own handoff already carries the itinerary.
+  const alternatives=elements.get('alternative-searches');
+  assert.equal(alternatives.hidden,false);
+  assert.deepEqual(alternatives.children.map(button=>button.dataset.cabin),['BUSINESS','COACH']);
+  assert.match(alternatives.children[0].textContent,/Google Flights.*Business.*not BA/i);
+  assert.match(alternatives.children[1].textContent,/Google Flights.*Economy.*not BA/i);
+  assert.match(elements.get('link-note').textContent,/search per cabin/i);
+  assert.match(elements.get('link-note').textContent,/not reproduced leg-for-leg/i);
+
+  // The connection legs collapse to their O&D slice; the two business slices and the
+  // economy slice become separate GF searches rather than one mixed-cabin link.
+  await alternatives.children[0].events.click();
+  await alternatives.children[1].events.click();
+  assert.equal(opened.length,3);
+  assert.deepEqual(copied,[opened[1],opened[2]]);
+  const businessUrl=new URL(opened[1]),economyUrl=new URL(opened[2]);
+  for(const url of [businessUrl,economyUrl]){
+    assert.equal(url.origin,'https://www.google.com');
+    assert.equal(url.pathname,'/travel/flights/search');
+    assert.doesNotMatch(url.href,/processOffer|search-journey-id|cid=|passenger-ui/i);
+  }
+  const businessTfs=Buffer.from(businessUrl.searchParams.get('tfs').replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('latin1');
+  const economyTfs=Buffer.from(economyUrl.searchParams.get('tfs').replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('latin1');
+  assert.ok(businessTfs.includes('CDG')&&businessTfs.includes('MSY')&&businessTfs.includes('MIA')&&businessTfs.includes('STI'));
+  assert.ok(!businessTfs.includes('BCN'),'business query must not include the economy O&D slice');
+  assert.ok(economyTfs.includes('STI')&&economyTfs.includes('BCN')&&economyTfs.includes('2027-01-21'));
+  assert.ok(!economyTfs.includes('CDG'),'economy query must not include the business O&D slices');
+  assert.equal((businessTfs.match(/LHR/g)||[]).length,0,'a connection leg must not become its own search row');
+  assert.equal((economyTfs.match(/LHR/g)||[]).length,0,'a connection leg must not become its own search row');
+  const businessFields=googleFlightsScalarFields(businessUrl.href);
+  const economyFields=googleFlightsScalarFields(economyUrl.href);
+  assert.deepEqual(businessFields.get(8),[1]);
+  assert.deepEqual(businessFields.get(9),[3],'business cabin uses Google Flights seat class 3');
+  assert.deepEqual(businessFields.get(19),[3],'two non-reciprocal slices use the multi-city trip type');
+  assert.deepEqual(economyFields.get(9),[1],'economy cabin uses Google Flights seat class 1');
+  assert.deepEqual(economyFields.get(19),[2],'one slice uses the one-way trip type');
+
+  // Switching to AA hides and removes the alternatives: AA's own handoff carries the itinerary.
   const menu=elements.get('airline-picker').children[0].children[1];
   menu.children[1].events.click();
-  assert.equal(elements.get('alternative-search').hidden,true);
+  assert.equal(alternatives.hidden,true);
+  assert.equal(alternatives.children.length,0);
   // Nothing parsed -> no fabricated alternative search.
   elements.get('gds').value='';
-  await window.openAlternativeSearch();
-  assert.equal(opened.length,2);
+  await window.openAlternativeSearch('BUSINESS');
+  assert.equal(opened.length,3);
 });

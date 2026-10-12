@@ -10,16 +10,16 @@ be observed without executing JavaScript — and because a rendering fetch (howe
 ## Run it (on a machine with a normal browser and internet access)
 
 ```bash
-git switch arena/7263fe23-spicylinkgenerator      # or main once merged
+git switch main                                  # or the branch being evaluated
 npm install --no-save --no-package-lock playwright
 npx playwright install chromium
 
 node tools/ba-live-probe.mjs --dry-run --capture --matrix --legacy   # review the case list, no browser
 node tools/ba-live-probe.mjs                     # the app's own output + the AA link, headless
 node tools/ba-live-probe.mjs --headful           # watch it happen in a visible window
-node tools/ba-live-probe.mjs --capture           # PRIORITY 1: capture BA's own prefill URL
-node tools/ba-live-probe.mjs --matrix            # PRIORITY 2: legacy-entry variant matrix
-node tools/ba-live-probe.mjs --legacy            # re-measure the recorded-BLOCKED handoff
+node tools/ba-live-probe.mjs --headful --capture --seconds=150  # PRIORITY 1: capture BA's own prefill URL
+node tools/ba-live-probe.mjs --headful --matrix --seconds=150   # PRIORITY 2: legacy-entry variant matrix
+node tools/ba-live-probe.mjs --headful --legacy --seconds=150   # re-measure the recorded-BLOCKED handoff
 node tools/ba-live-probe.mjs --seconds=150       # wait longer for a price to resolve
 node tools/ba-live-probe.mjs --no-consent        # do not click the cookie banner
 ```

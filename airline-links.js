@@ -120,6 +120,53 @@ export function ondSlices(segments) {
   if (baSegmentsMalformed(segments)) return [];
   return baOndJourneys(segments).map(j=>({origin:j.o,dest:j.d,ymd:j.date}));
 }
+/** O&D slices annotated with each cabin present on their component legs.
+ *  Google Flights accepts one cabin per search, so a mixed-cabin connection is
+ *  represented in each applicable cabin group instead of silently choosing one. */
+export function ondSlicesWithCabin(segments) {
+  if (baSegmentsMalformed(segments)) return [];
+  const indexes=baSliceIndex(segments);
+  const journeys=[];
+  for(let i=0;i<segments.length;i++){
+    const s=segments[i];
+    let journey=journeys[journeys.length-1];
+    if(!journey||indexes[i]!==indexes[i-1]){
+      journey={origin:s.origin,dest:s.dest,ymd:s.ymd,cabins:[]};
+      journeys.push(journey);
+    }else{
+      journey.dest=s.dest;
+    }
+    const cabin=segmentCabin(s.carrier,s.cls);
+    if(!journey.cabins.includes(cabin))journey.cabins.push(cabin);
+  }
+  return journeys.flatMap(({origin,dest,ymd,cabins})=>
+    cabins.map(cabin=>({origin,dest,ymd,cabin})));
+}
+function normalizeSearchCabin(value) {
+  const cabin=String(value||'').trim().toUpperCase().replace(/[ _]+/g,'-');
+  if(cabin==='FIRST'||cabin==='F')return 'FIRST';
+  if(cabin==='BUSINESS'||cabin==='C'||cabin==='J')return 'BUSINESS';
+  if(cabin==='PREMIUM-COACH'||cabin==='PREMIUM-ECONOMY'||cabin==='W')return 'PREMIUM-COACH';
+  if(cabin==='COACH'||cabin==='ECONOMY'||cabin==='M'||cabin==='Y')return 'COACH';
+  return null;
+}
+/** Group cabin-annotated O&D slices into one Google Flights search per cabin.
+ *  Passing raw flight segments is also supported; they are collapsed and annotated first. */
+export function gfSearchGroups(slicesOrSegments) {
+  const input=Array.isArray(slicesOrSegments)?slicesOrSegments:[];
+  const annotated=input.every(s=>s&&typeof s==='object'&&typeof s.cabin==='string');
+  const slices=annotated?input:ondSlicesWithCabin(slicesOrSegments);
+  const groups=new Map();
+  for(const slice of slices){
+    if(!/^[A-Z]{3}$/.test(slice?.origin||'')||!/^[A-Z]{3}$/.test(slice?.dest||'')||
+       !/^\d{4}-\d\d-\d\d$/.test(slice?.ymd||''))continue;
+    const cabin=normalizeSearchCabin(slice.cabin);
+    if(!cabin)continue;
+    if(!groups.has(cabin))groups.set(cabin,{cabin,slices:[]});
+    groups.get(cabin).slices.push({origin:slice.origin,dest:slice.dest,ymd:slice.ymd});
+  }
+  return [...groups.values()];
+}
 function baSegmentsMalformed(segments) {
   return !Array.isArray(segments) || !segments.length ||
     segments.some(s=>!/^[A-Z]{3}$/.test(s?.origin||'') || !/^[A-Z]{3}$/.test(s?.dest||'') || !/^\d{4}-\d\d-\d\d$/.test(s?.ymd||''));
