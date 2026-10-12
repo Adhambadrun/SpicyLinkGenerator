@@ -4,7 +4,7 @@
 //   1) user enters their @bcflights.com or @travelbusinessclass.com email (no name is asked for)
 //   2) request code -> sign { email, name (derived from the email), codeHash, exp, attempts }
 //   3) email name + email + code to the approver (adhambadraan@gmail.com by default)
-//   4) verify       -> check signature/expiry/code -> sign a 7-day session cookie
+//   4) verify       -> check signature/expiry/code -> sign a session cookie (stays alive while the tab is open)
 //
 // Domain-locked to @bcflights.com and @travelbusinessclass.com by default
 // (override with ALLOWED_DOMAINS — comma-separated — or the legacy single ALLOWED_DOMAIN).
@@ -58,8 +58,11 @@ export const approverEmail = () => process.env.APPROVER_EMAIL || 'adhambadraan@g
 
 export const CODE_TTL_MS = 10 * 60 * 1000;          // code lives 10 minutes
 export const MAX_ATTEMPTS = 5;                       // wrong-code tries before a new code is required
-export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;  // hard cap: session lives 7 days
-export const IDLE_TTL_MS = 5 * 60 * 1000;            // unused for 5 minutes → session dies
+// Sessions do NOT time out while the tab is open: every heartbeat (/api/session) rolls the
+// expiry forward by SESSION_TTL_MS, so a signed-in user stays signed in indefinitely. The
+// per-tab sessionStorage flag in the browser is what ends the session when the tab closes,
+// so the next visit always starts at the OTP login.
+export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;  // rolling window, refreshed on every heartbeat
 
 export function sessionCookie(payload, secret) {
   return `slg_session=${sign(payload, secret)}; HttpOnly; Path=/; Max-Age=${SESSION_TTL_MS / 1000}; SameSite=Lax`;
@@ -173,12 +176,10 @@ export function handleVerify({ token, code, email, secret }) {
     };
   }
 
-  // `act` = last activity stamp; handleSession rolls it forward on every heartbeat,
-  // so a session left unused for IDLE_TTL_MS is refused server-side.
   return {
     status: 200,
     json: { ok: true, email: p.email, name: p.name || '' },
-    cookie: sessionCookie({ email: p.email, name: p.name || '', act: Date.now(), exp: Date.now() + SESSION_TTL_MS }, secret),
+    cookie: sessionCookie({ email: p.email, name: p.name || '', exp: Date.now() + SESSION_TTL_MS }, secret),
   };
 }
 
@@ -192,13 +193,10 @@ export function handleSession({ cookieHeader, secret }) {
   const p = unsign(token.slice('slg_session='.length), secret);
   const now = Date.now();
   if (!p || now > p.exp) return { status: 401, json: { ok: false } };
-  // Idle rule: no heartbeat for IDLE_TTL_MS → dead, even if the cookie itself is fresh.
-  // (Cookies minted before `act` existed fail this check once, forcing a re-login.)
-  if (now - (p.act || 0) > IDLE_TTL_MS) return { status: 401, json: { ok: false, reason: 'idle' } };
-  // Roll the activity stamp forward so active tabs stay signed in.
+  // Roll the expiry forward so a signed-in tab stays signed in (no idle timeout).
   return {
     status: 200,
     json: { ok: true, email: p.email, name: p.name || '' },
-    cookie: sessionCookie({ ...p, act: now }, secret),
+    cookie: sessionCookie({ email: p.email, name: p.name || '', exp: now + SESSION_TTL_MS }, secret),
   };
 }

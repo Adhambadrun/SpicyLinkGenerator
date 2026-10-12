@@ -114,25 +114,26 @@ test('full flow: the emailed code opens a session cookie', async () => {
   assert.ok(session.cookie, 'an active session rolls a fresh cookie');
 });
 
-test('idle sessions (>5 min unused) are refused, active ones roll forward', async () => {
-  const { sign, IDLE_TTL_MS, SESSION_TTL_MS } = await import('../lib/core.js');
+test('signed-in sessions do not time out while the tab is open — every heartbeat rolls the expiry forward', async () => {
+  const { sign, SESSION_TTL_MS } = await import('../lib/core.js');
   const now = Date.now();
 
-  const stale = sign(
-    { email: 'x@bcflights.com', name: 'X', act: now - IDLE_TTL_MS - 1000, exp: now + SESSION_TTL_MS },
-    SECRET
-  );
-  const idleOut = handleSession({ cookieHeader: 'slg_session=' + stale, secret: SECRET });
-  assert.equal(idleOut.status, 401);
-  assert.equal(idleOut.json.reason, 'idle');
+  // a cookie still inside its rolling window stays valid, even if the last heartbeat was long ago
+  const longIdle = sign({ email: 'x@bcflights.com', name: 'X', exp: now + SESSION_TTL_MS - 1000 }, SECRET);
+  const stillIn = handleSession({ cookieHeader: 'slg_session=' + longIdle, secret: SECRET });
+  assert.equal(stillIn.status, 200);
+  assert.ok(stillIn.cookie, 'every heartbeat gets a fresh cookie');
 
-  const fresh = sign({ email: 'x@bcflights.com', name: 'X', act: now, exp: now + SESSION_TTL_MS }, SECRET);
-  const okOut = handleSession({ cookieHeader: 'slg_session=' + fresh, secret: SECRET });
-  assert.equal(okOut.status, 200);
-  assert.ok(okOut.cookie, 'active session gets a rolled cookie');
-  // the rolled cookie must itself be valid
-  const rolled = handleSession({ cookieHeader: okOut.cookie.split(';')[0], secret: SECRET });
-  assert.equal(rolled.status, 200);
+  // the rolled cookie is pushed a full window into the future and is itself valid
+  const rolled = stillIn.cookie.split(';')[0];
+  const payload = JSON.parse(Buffer.from(rolled.slice('slg_session='.length).split('.')[0], 'base64url').toString('utf8'));
+  assert.ok(payload.exp >= Date.now() + SESSION_TTL_MS - 5000, 'expiry is rolled forward');
+  assert.equal(payload.act, undefined, 'no idle-activity stamp is kept any more');
+  assert.equal(handleSession({ cookieHeader: rolled, secret: SECRET }).status, 200);
+
+  // only a cookie past its rolling expiry (no heartbeat for a whole window) is refused
+  const dead = sign({ email: 'x@bcflights.com', name: 'X', exp: now - 1000 }, SECRET);
+  assert.equal(handleSession({ cookieHeader: 'slg_session=' + dead, secret: SECRET }).status, 401);
 });
 
 test('verify rejects a wrong code, a wrong secret and a mismatched email', async () => {
