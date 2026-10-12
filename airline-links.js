@@ -1,7 +1,13 @@
 // One decision point for BOTH Generate and Copy. AA uses the historical metasearch
-// handoff; BA uses the repository's legacy processOffer O&D builder (clearly labeled as
-// unverified because it does not pin flight numbers). Other carriers use unverified
-// direct-search prefills or their directory homepage.
+// handoff; BA uses the repository's legacy processOffer O&D builder, but only for the
+// shapes BA's public search can represent without a multi-city tool: one O&D slice
+// (one-way, connections allowed) or two O&D slices (a return trip). It is clearly
+// labeled as unverified because it does not pin flight numbers. Multi-city itineraries
+// (3+ O&D slices) fall back to the BA homepage with an explicit reason: live probing
+// (see AA_ACCEPTANCE.md) shows the processOffer endpoint answers every input with the
+// same "Processing Flight Selection" page, so acceptance of multi-city links cannot be
+// proven and must not be assumed. Other carriers use unverified direct-search prefills
+// or their directory homepage.
 import { airlineOption, itineraryAirlines } from './airline-directory.js';
 import { buildAAMetasearchUrl } from './aa-handoff.js';
 
@@ -56,17 +62,35 @@ function baSliceIndex(segs) {
   }
   return idx;
 }
-export function buildBAProcessOfferUrl(segments, passengers) {
-  const c=counts(passengers);
-  if (!c || !Array.isArray(segments) || !segments.length ||
-      segments.some(s=>!/^[A-Z]{3}$/.test(s?.origin||'') || !/^[A-Z]{3}$/.test(s?.dest||'') || !/^\d{4}-\d\d-\d\d$/.test(s?.ymd||'')))
-    throw new Error('BA processOffer URL requires valid segments and passenger counts.');
+// BA's public search links are only offered for one-way and return-trip shapes. The
+// endpoint's processing page looks identical for valid, multi-city and even invalid
+// input, so acceptance of 3+ O&D slices is unprovable and must not be emitted.
+const BA_MAX_SLICES=2;
+function baOndJourneys(segments) {
   const idx=baSliceIndex(segments);
   const journeys=[];let cur=-1;
   for(let i=0;i<segments.length;i++){
     if(idx[i]!==cur){cur=idx[i];journeys.push({o:segments[i].origin,d:segments[i].dest,date:segments[i].ymd});}
     else journeys[journeys.length-1].d=segments[i].dest;
   }
+  return journeys;
+}
+function baSegmentsMalformed(segments) {
+  return !Array.isArray(segments) || !segments.length ||
+    segments.some(s=>!/^[A-Z]{3}$/.test(s?.origin||'') || !/^[A-Z]{3}$/.test(s?.dest||'') || !/^\d{4}-\d\d-\d\d$/.test(s?.ymd||''));
+}
+function baUnsupportedSlices(journeys) {
+  return journeys.length>BA_MAX_SLICES
+    ? `BA offer-search links support one-way and round-trip only; this itinerary needs ${journeys.length} O&D slices (multi-city). Search the full itinerary directly on ba.com.`
+    : null;
+}
+export function buildBAProcessOfferUrl(segments, passengers) {
+  const c=counts(passengers);
+  if (!c || baSegmentsMalformed(segments))
+    throw new Error('BA processOffer URL requires valid segments and passenger counts.');
+  const journeys=baOndJourneys(segments);
+  const unsupported=baUnsupportedSlices(journeys);
+  if (unsupported) throw new Error(unsupported);
   const onds=journeys.map(j=>`${j.o}-${j.d}_${j.date}`).join(',');
   return `https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=${onds}`+
     `&ad=${c.adults}&yad=${c.youths}&ch=${c.children}&inf=${c.infants}`+
@@ -121,6 +145,10 @@ export function resolveAirlineLink(segments, selectedCarrier, passengers, {build
   }
   if (selectedCarrier==='BA') {
     try {
+      if (!baSegmentsMalformed(segments)) {
+        const unsupported=baUnsupportedSlices(baOndJourneys(segments));
+        if (unsupported) return fallback(unsupported);
+      }
       const url=buildBAUrl(segments,passengers);
       if (!url) throw new Error('empty BA URL');
       return {url,kind:'search_unverified',
