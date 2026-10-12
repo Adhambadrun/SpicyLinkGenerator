@@ -119,7 +119,20 @@ launching a browser.
 ## Optional: run it in GitHub Actions
 
 `gh-workflow-ba-live-probe.yml` in this folder is a ready-to-use workflow (Chrome under Xvfb,
-screenshots uploaded as artifacts, `workflow_dispatch` only). Copy it to
+`screenshots uploaded as artifacts, workflow_dispatch` only). Copy it to
 `.github/workflows/ba-live-probe.yml` and run it from the Actions tab — this requires a token
 with the GitHub **workflows** permission, which the arena automation token does not have, so it
 cannot add the file itself.
+
+**2026-10-12 attempt:** `git push` of `.github/workflows/ba-live-probe.yml` (with
+`--capture --matrix --legacy --seconds=150`) was rejected as
+`refusing to allow a GitHub App to create or update workflow '.github/workflows/ba-live-probe.yml'
+without 'workflows' permission`, and `gh api PUT repos/.../contents/.github/workflows/ba-live-probe.yml`
+returned `403 Resource not accessible by integration`. Install it manually via the GitHub web UI:
+Repo → `Add file` → `Create new file` → paste `tools/gh-workflow-ba-live-probe.yml` at
+`.github/workflows/ba-live-probe.yml` (edit the `Run probe` line to
+`node tools/ba-live-probe.mjs --capture --matrix --legacy --seconds=150`) → `Commit directly to main` →
+`Actions` → `BA live browser probe` → `Run workflow` → download `ba-probe-artifacts`
+(`artifacts/ba-live-probe-report.json` + `artifacts/*.png`). Runner IPs may be bot-blocked by BA
+(Akamai); treat a block there as a possible bot block, not a final answer, and rely on the owner's
+incognito test for the verdict.
