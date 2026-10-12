@@ -1,7 +1,8 @@
 // POST /api/request-code
 // Validates the email domain (@bcflights.com / @travelbusinessclass.com), generates a 6-digit code,
-// signs a token, and emails the code straight to the address that asked for it — the person
-// signing in — via Resend. No approver relay: the requester's own inbox is the destination.
+// signs a token, and emails the code — plus who is asking for it — to the APPROVER inbox
+// (APPROVER_EMAIL, by default adhambadraan@gmail.com) via Resend. The approver passes the code
+// on to the person signing in; nothing is ever emailed to the browser.
 import { handleRequestCode, DEFAULT_AUTH_SECRET, warnIfDefaultSecret } from '../lib/core.js';
 import { mailConfig, missingMailConfig, sendLoginCodeEmail } from '../lib/mailer.js';
 

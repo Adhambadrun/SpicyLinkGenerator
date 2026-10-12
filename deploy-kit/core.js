@@ -3,7 +3,10 @@
 //
 //   1) user enters their @bcflights.com or @travelbusinessclass.com email (no name is asked for)
 //   2) request code -> sign { email, name (derived from the email), codeHash, exp, attempts }
-//   3) email the 6-digit code straight to the address that asked for it (the person signing in)
+//   3) email the 6-digit code — plus who is asking for it — to the APPROVER inbox
+//      (APPROVER_EMAIL, by default adhambadraan@gmail.com). The approver passes the code on
+//      to that person, so every sign-in is approved by a human. Nothing is ever emailed to
+//      the person signing in.
 //   4) verify       -> check signature/expiry/code -> sign a session cookie (stays alive while the tab is open)
 //
 // Domain-locked to @bcflights.com and @travelbusinessclass.com by default
@@ -56,6 +59,21 @@ export const allowedDomainsLabel = () => {
   const list = allowedDomains().map((d) => `@${d}`);
   return list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} or ${list[list.length - 1]}`;
 };
+
+// Who receives the 6-digit code for every sign-in attempt. The default is the owner's own
+// inbox, and that default is what makes the built-in sender work: Resend's shared sender
+// (onboarding@resend.dev) can only deliver to the address its account is registered to,
+// which is normally exactly this inbox. Set APPROVER_EMAIL to a different address (or to
+// "none"/"disabled" to switch the approval relay off) and redeploy.
+export const DEFAULT_APPROVER_EMAIL = 'adhambadraan@gmail.com';
+
+export function approverEmail(environment = process.env) {
+  const raw = environment ? environment.APPROVER_EMAIL : undefined;
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (value === 'none' || value === 'disabled') return '';
+  return value || DEFAULT_APPROVER_EMAIL;
+}
+
 export const CODE_TTL_MS = 10 * 60 * 1000;          // code lives 10 minutes
 export const MAX_ATTEMPTS = 5;                       // wrong-code tries before a new code is required
 // Sessions do NOT time out while the tab is open: every heartbeat (/api/session) rolls the
@@ -121,6 +139,21 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
   if (!isAllowedDomain(e.split('@')[1]))
     return { status: 403, json: { error: `Only ${allowedDomainsLabel()} emails are allowed.` } };
 
+  // The code is delivered to the approver inbox, so without one there is no way to finish
+  // a sign-in. This is a deployment problem, not something the visitor typed.
+  const approver = approverEmail();
+  if (!approver) {
+    return {
+      status: 500,
+      json: {
+        error:
+          'Email delivery is not configured — set APPROVER_EMAIL to the inbox that should receive ' +
+          'sign-in codes, then redeploy.',
+        setupError: true,
+      },
+    };
+  }
+
   const n = displayNameFromEmail(e);
   const code = genCode();
   const token = sign(
@@ -128,12 +161,12 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
     secret
   );
 
-  // The code always goes to the address that asked for it — the person signing in.
-  // There is no approver relay: the email address itself is the delivery address,
-  // and the domain lock (above) is what decides who may ask for a code at all.
+  // The code always goes to the approver — never to the browser, and never to the person
+  // signing in. The approver reads off the 6 digits; the domain lock above decides who may
+  // even raise a request.
   const sent =
     typeof sendEmail === 'function'
-      ? await sendEmail({ to: e, requester: e, name: n, code })
+      ? await sendEmail({ to: approver, requester: e, name: n, code })
       : false;
   const sentOk = sent === true || (sent && sent.ok === true);
   const sentErr = (sent && typeof sent.error === 'string' && sent.error) || '';
@@ -152,8 +185,8 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
         token,
         devCode: code,
         message: sentOk
-          ? `${label} — sign-in code emailed to ${e}. Code also shown below.`
-          : `${label} — sign-in code for ${e} could not be emailed (${sentErr || 'no sender configured'}). Code shown below.`,
+          ? `${label} — approval email sent to ${approver} for ${e}. Code also shown below.`
+          : `${label} — approval email NOT sent to ${approver} for ${e} (${sentErr || 'no sender configured'}). Code shown below.`,
       },
     };
   }
@@ -162,12 +195,12 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
     return {
       status: 502,
       json: {
-        error: sentErr || 'Could not send the sign-in code email. Check the server email configuration.',
+        error: sentErr || 'Could not send the sign-in code to the approver. Check the server email configuration.',
         setupError: sentSetup,
       },
     };
   }
-  return { status: 200, json: { ok: true, token, message: `A 6-digit code was emailed to ${e}.` } };
+  return { status: 200, json: { ok: true, token, message: `A 6-digit code was sent to the approver for ${n} (${e}).` } };
 }
 
 export function handleVerify({ token, code, email, secret }) {

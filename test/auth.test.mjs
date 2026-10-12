@@ -2,6 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_APPROVER_EMAIL,
+  approverEmail,
   displayNameFromEmail,
   handleRequestCode,
   handleVerify,
@@ -58,30 +60,40 @@ test('ALLOWED_DOMAINS / ALLOWED_DOMAIN env overrides the default list', () => {
   }
 });
 
-test('handleRequestCode emails the code to the person signing in — no approver relay', async () => {
-  let payload = null;
-  const out = await handleRequestCode({
-    email: 'Lamar.Garcia@bcflights.com',
-    secret: SECRET,
-    sendEmail: async (p) => {
-      payload = p;
-      return { ok: true };
-    },
-  });
+test('handleRequestCode emails the code to the approver inbox — never to the person signing in', async () => {
+  const previous = process.env.APPROVER_EMAIL;
+  delete process.env.APPROVER_EMAIL;
+  try {
+    let payload = null;
+    const out = await handleRequestCode({
+      email: 'Lamar.Garcia@bcflights.com',
+      secret: SECRET,
+      sendEmail: async (p) => {
+        payload = p;
+        return { ok: true };
+      },
+    });
 
-  assert.equal(out.status, 200);
-  assert.equal(out.json.ok, true);
-  assert.ok(!('devCode' in out.json), 'production mode must never return the code to the browser');
-  assert.equal(payload.to, 'lamar.garcia@bcflights.com', 'the requester is the recipient');
-  assert.equal(payload.requester, 'lamar.garcia@bcflights.com');
-  assert.equal(payload.name, 'Lamar Garcia');
-  assert.match(payload.code, /^\d{6}$/);
-  assert.match(out.json.message, /emailed to lamar\.garcia@bcflights\.com/);
+    assert.equal(out.status, 200);
+    assert.equal(out.json.ok, true);
+    assert.ok(!('devCode' in out.json), 'production mode must never return the code to the browser');
+    assert.equal(payload.to, DEFAULT_APPROVER_EMAIL, 'the default approver inbox receives the code');
+    assert.equal(payload.to, 'adhambadraan@gmail.com');
+    assert.equal(payload.requester, 'lamar.garcia@bcflights.com', 'the approver must see who is asking');
+    assert.equal(payload.name, 'Lamar Garcia');
+    assert.match(payload.code, /^\d{6}$/);
+    assert.match(out.json.message, /sent to the approver/);
+    assert.match(out.json.message, /lamar\.garcia@bcflights\.com/);
+    assert.ok(!/emailed to lamar/i.test(out.json.message), 'the code is never described as mailed to the requester');
+  } finally {
+    if (previous === undefined) delete process.env.APPROVER_EMAIL;
+    else process.env.APPROVER_EMAIL = previous;
+  }
 });
 
-test('APPROVER_EMAIL is ignored — the code always goes to whoever asked for it', async () => {
+test('APPROVER_EMAIL chooses which inbox approves sign-ins', async () => {
   const previous = process.env.APPROVER_EMAIL;
-  process.env.APPROVER_EMAIL = 'someone.else@example.com';
+  process.env.APPROVER_EMAIL = '  someone.else@example.com  ';
   try {
     let payload = null;
     const out = await handleRequestCode({
@@ -93,8 +105,33 @@ test('APPROVER_EMAIL is ignored — the code always goes to whoever asked for it
       },
     });
     assert.equal(out.status, 200);
-    assert.equal(payload.to, 'agent@travelbusinessclass.com');
-    assert.match(out.json.message, /emailed to agent@travelbusinessclass\.com/);
+    assert.equal(payload.to, 'someone.else@example.com', 'the configured approver wins over the default');
+    assert.equal(payload.requester, 'agent@travelbusinessclass.com');
+    assert.equal(approverEmail(), 'someone.else@example.com');
+  } finally {
+    if (previous === undefined) delete process.env.APPROVER_EMAIL;
+    else process.env.APPROVER_EMAIL = previous;
+  }
+});
+
+test('with no approver inbox the flow stops as a setup problem instead of pretending to send', async () => {
+  const previous = process.env.APPROVER_EMAIL;
+  process.env.APPROVER_EMAIL = 'none';
+  try {
+    assert.equal(approverEmail(), '', '"none" disables the approval relay');
+    let called = false;
+    const out = await handleRequestCode({
+      email: 'lamar.garcia@bcflights.com',
+      secret: SECRET,
+      sendEmail: async () => {
+        called = true;
+        return { ok: true };
+      },
+    });
+    assert.equal(called, false, 'nothing is even attempted without an approver');
+    assert.equal(out.status, 500);
+    assert.equal(out.json.setupError, true);
+    assert.match(out.json.error, /APPROVER_EMAIL/);
   } finally {
     if (previous === undefined) delete process.env.APPROVER_EMAIL;
     else process.env.APPROVER_EMAIL = previous;
