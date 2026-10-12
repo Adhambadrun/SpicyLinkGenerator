@@ -76,6 +76,7 @@ test('api/request-code needs only an email, then api/verify + api/session comple
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
   assert.ok(res.body.token, 'a signed token must come back');
   assert.match(res.body.devCode, /^\d{6}$/, 'dev mode returns the code so the flow can be tested');
+  assert.match(res.body.message, /lamar\.garcia@bcflights\.com/, 'the code is aimed at the requester, never an approver');
 
   const v = stubRes();
   await verify(post({ token: res.body.token, code: res.body.devCode, email: 'lamar.garcia@bcflights.com' }), v);
