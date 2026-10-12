@@ -26,17 +26,26 @@
   textarea::-webkit-scrollbar-corner,#out::-webkit-scrollbar-corner{background:#000}
   .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
   .paxgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 18px;margin-bottom:14px}
-  .live{display:grid;grid-template-columns:280px 1fr;gap:14px}
-  .live-left{display:flex;flex-direction:column;gap:3px}
-  .live-row{padding:7px 10px;background:#2a2a2e;border:1px solid #3a3a3e;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink)}
-  .live-row:hover{filter:brightness(1.15)}
-  .live-row.sel{border-color:var(--red);background:#2e2e3a}
-  .live-right{background:#0a0a0e;border:1px solid #33333d;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
-  .live-name{font-weight:700;font-size:14px}
-  .live-route{color:var(--muted);font-size:12px}
-  .live-price{color:var(--red);font-weight:700;font-size:12.5px}
-  .live-segs{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#d6e4f5;white-space:pre-wrap}
-  .live-open{align-self:flex-end}
+  .destination-panel{background:#0d0d12;border:1px solid #383840;border-radius:10px;padding:14px;margin:16px 0;position:relative}
+  .destination-panel .step{margin-bottom:10px}
+  .airline-identity{display:flex;align-items:center;gap:11px;min-width:0}
+  .airline-label{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .airline-logo{width:34px;height:34px;padding:3px;object-fit:contain;background:#fff;border-radius:8px;flex:none}
+  .airline-logo-text{display:grid;place-items:center;background:#2c1418;color:#fff;border:1px solid #ab4451;font-size:12px;font-weight:800}
+  .airline-single,.airline-trigger{width:100%;display:flex;align-items:center;justify-content:space-between;background:#1c1c22;border:1px solid #484851;border-radius:9px;color:var(--ink);padding:10px 12px;min-height:57px}
+  .airline-trigger{text-align:left;cursor:pointer;font:inherit}
+  .airline-trigger:hover,.airline-option:hover{border-color:#ed4657;background:#262127}
+  .airline-trigger:focus-visible,.airline-option:focus-visible{outline:2px solid #ff8890;outline-offset:2px}
+  .airline-chevron{font-size:24px;color:#ff6775;margin-left:12px;line-height:1}
+  .airline-dropdown{position:relative}
+  .airline-menu{position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:10;max-height:260px;overflow:auto;padding:5px;background:#151519;border:1px solid #5e3d44;border-radius:10px;box-shadow:0 18px 40px #000a}
+  .airline-menu[hidden]{display:none}
+  .airline-option{width:100%;display:block;text-align:left;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--ink);padding:7px 9px;cursor:pointer;font:inherit}
+  .airline-option[aria-selected="true"]{background:#3a1a20;border-color:#ba3446}
+  .link-note{color:var(--muted);font-size:12px;line-height:1.5;margin:10px 0 0}
+  .link-note[data-kind="aa_handoff"]{color:#ffc4c8}
+  .link-note[data-kind="search_unverified"]{color:#efc795}
+  .row button:disabled{opacity:.5;cursor:not-allowed}
   .stepper{display:flex;align-items:center;gap:8px}
   .stepper button{width:32px;height:32px;border-radius:8px;border:1px solid #33333d;background:#23232b;color:var(--ink);font-size:17px;cursor:pointer}
   .stepper .val{min-width:26px;text-align:center;font-size:19px;font-weight:700}
@@ -47,6 +56,11 @@
   #out{width:100%;min-height:56px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;padding:12px;border:1px solid #33333d;border-radius:8px;background:#0a0a0e;color:#d6e4f5;white-space:pre-wrap;word-break:break-word;scrollbar-color:#2a2a2e #000;scrollbar-width:thin}
   .warn{display:none;margin:0 0 8px;padding:8px 12px;border:1px solid var(--red);border-left:4px solid var(--red);border-radius:8px;background:rgba(224,0,18,.07);color:#ff8890;font-size:12px;font-weight:600;white-space:pre-wrap;word-break:break-word}
   .warn.show{display:block}
+  #quote-time{margin:6px 0;padding:9px 11px;border:1px solid #45454d;border-radius:8px;background:#0d0d12;color:var(--ink);color-scheme:dark}
+  #quote-status{font-weight:700;color:#d6e4f5}
+  #quote-status[data-state="recheck"],#quote-status[data-state="expired"]{color:#ff8890}
+  #quote-status[data-state="recent"]{color:#97dcaa}
+  #quote-time + p + p{font-size:12px;color:var(--muted)}
   .hint{font-size:12px;color:var(--muted);margin-top:7px}
   .credit{margin-top:16px;color:var(--muted);font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:12px}
   .credit-credit{cursor:pointer}
@@ -65,6 +79,13 @@
   .modal .m-close:hover{filter:brightness(1.1)}
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99}
   .toast.show{opacity:1}
+  @media(max-width:600px){
+    .wrap{padding:12px 10px 64px}
+    .card{padding:15px}
+    .paxgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .row>.btn{flex:1 1 100%;justify-content:center}
+    .airline-menu{max-height:220px}
+  }
 </style>
 </head>
 <body>
@@ -111,8 +132,16 @@
 </header>
 
 <div class="card first">
-  <p class="step">1 · GDS itinerary</p>
+  <p class="step">1 · GDS itinerary or Matrix itinerary JSON</p>
   <textarea id="gds" spellcheck="false"></textarea>
+</div>
+
+<div class="card first">
+  <p class="step">Quote age · advisory only</p>
+  <label for="quote-time">When was this fare quoted? (your local time)</label>
+  <input id="quote-time" type="datetime-local" aria-describedby="quote-status">
+  <p id="quote-status" role="status">No quote time supplied. Fare and availability not checked.</p>
+  <p>⏱ A timestamp cannot prove a seat or price is available. Reprice with an authorized provider before booking.</p>
 </div>
 
 <div class="card first">
@@ -123,9 +152,14 @@
     <div class="field"><label>Infant on lap</label><div class="stepper"><button onclick="step('infantsInLap',-1)">−</button><span class="val" id="v-infantsInLap">0</span><button onclick="step('infantsInLap',1)">+</button></div></div>
     <div class="field"><label>Infants w/ seat</label><div class="stepper"><button onclick="step('infantsInSeat',-1)">−</button><span class="val" id="v-infantsInSeat">0</span><button onclick="step('infantsInSeat',1)">+</button></div></div>
   </div>
+  <div class="destination-panel">
+    <p class="step">Airline destination</p>
+    <div id="airline-picker" aria-label="Select an airline"></div>
+    <p id="link-note" class="link-note" role="status">Paste an itinerary to see its airlines.</p>
+  </div>
   <div class="row">
-    <button class="btn g" onclick="genAALink()">🔗 Generate Link</button>
-    <button class="btn y" onclick="copyLink()">Copy Link</button>
+    <button class="btn g" id="generate-link" onclick="openSelectedLink()" disabled>Generate airline link</button>
+    <button class="btn y" id="copy-link" onclick="copyLink()" disabled>Copy same link</button>
   </div>
 </div>
 
@@ -133,23 +167,6 @@
   <p class="step">3 · Output</p>
   <div id="warn" class="warn"></div>
   <div id="out"></div>
-</div>
-
-<div class="card first">
-  <p class="step">4 · Alternative airlines link generator</p>
-  <div class="live">
-    <div class="live-left" id="live-airlines">
-      <div class="live-row sel" data-air="dl">Delta</div>
-      <div class="live-row" data-air="as">Alaska</div>
-    </div>
-    <div class="live-right">
-      <div id="live-name" class="live-name">Select an airline</div>
-      <div id="live-route" class="live-route"></div>
-      <div id="live-price" class="live-price"></div>
-      <div id="live-segs" class="live-segs"></div>
-      <button class="btn g live-open" id="live-open" onclick="openLive()">Open Checkout</button>
-    </div>
-  </div>
 </div>
 
 <div class="credit">
@@ -163,7 +180,7 @@
     <h2>Spicy Link Generator</h2>
     <p class="m-sub">Made by Adham Badran</p>
     <ul>
-      <li>Currently supporting American Airlines, Delta Airlines, and Alaska Airlines</li>
+      <li>Experimental search links are not confirmed airline checkout sessions.</li>
     </ul>
     <p class="m-note">Updates and bug fixes are applied automatically.</p>
     <button class="m-close" onclick="hideCredit()">Close</button>
@@ -173,7 +190,11 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script>
+<script type="module">
+import { parseMatrixInput, assessQuote } from "/booking-tools.js";
+import { airlineOption, itineraryAirlines } from "/airline-directory.js";
+import { buildAAMetasearchUrl } from "/aa-handoff.js";
+import { resolveAirlineLink } from "/airline-links.js";
 /* ================= knowledge bases ================= */
 const MONTHS={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
 const AIRLINES={EI:"Aer Lingus",BA:"British Airways",AA:"American",AS:"Alaska",UA:"United",DL:"Delta",AF:"Air France",KL:"KLM",LH:"Lufthansa",IB:"Iberia",QR:"Qatar Airways",EK:"Emirates",TK:"Turkish Airlines",AC:"Air Canada",VS:"Virgin Atlantic",AY:"Finnair",LX:"Swiss",SK:"Scandinavian Airlines",AZ:"ITA Airways",TP:"TAP Air Portugal",B6:"JetBlue",F9:"Frontier",WN:"Southwest"};
@@ -454,23 +475,11 @@ function buildCompleteJson(segs,p){
     pricings:[{ext:{pax:paxObj,totalPrice:total},displayPrice:total}],
     tickets:[{pricings:[{ext:{pax:paxObj,taxTotals,totalPrice:total},
       fareCalculations:[{lines:[fareConstruction(segs,est)]}],fares,
-      notes:['Estimated fare (browser edition) — made by Adham Badran.','This ticket is non-refundable.'],displayPrice:total}],displayPrice:total}],
+      notes:['Synthetic illustration only. Price, fare basis, taxes and fare construction are NOT a real quote; no rules or refund policy verified.'],displayPrice:total}],displayPrice:total}],
     displayTotal:total,id:detId(segs),passengerCount:paxTotal()};
 }
 
 /* ================= links ================= */
-function unixMs(s){const[y,m,d]=s.ymd.split('-').map(Number);const off=tzOffsetMin(s.origin);
-  return Date.UTC(y,m-1,d,s.depH-Math.trunc(off/60),s.depM-(off%60));}
-function aaMetaUrl(segs){
-  const first=segs[0];const paxStr='A'+pax.adults+'S'+pax.seniors+'C'+pax.children+'I'+pax.infantsInSeat+'Y'+pax.youths+'L'+pax.infantsInLap;
-  let legs='';for(const s of segs)legs+='#'+s.origin+'|'+s.dest+'|0|0|'+unixMs(s);
-  let flights='';for(let i=0;i<segs.length;i++){const s=segs[i];flights+='#'+s.carrier+'|'+s.num+'|'+(s.cls||'Y')+'|'+s.origin+'|'+s.dest+'|'+unixMs(s)+'|'+i;}
-  const parts=['DIRECT','0','US',segs.length===1?'oneWay':'multi','4',paxStr,'0',first.origin,'0',first.dest,
-    '0','0','0','0','0','0','0','0.00','1',legs,flights];
-  return 'https://www.aa.com/goto/metasearch?ITEN='+encodeURIComponent(parts.join(','));
-}
-function aaMetaNote(segs){const n=segs.filter(s=>s.carrier!=='AA').length;
-  return n===0?'All segments AA-marketed — the link targets the exact flights.':'Note: the link embeds all '+segs.length+' flights ('+[...new Set(segs.map(s=>s.carrier))].join(', ')+') — aa.com sells AA/oneworld-marketed flights, so non-AA flights may not be pinned exactly.';}
 function enc(v){return encodeURIComponent(v);}
 function tripType(segs){if(segs.length===1)return 'oneWay';if(segs.length===2&&segs[0].origin===segs[segs.length-1].dest)return 'roundTrip';return 'multiCity';}
 function cabin(segs){let best='COACH',p=0;for(const s of segs){const c=cabinForCarrier(s.carrier,s.cls);const q=c==='FIRST'?3:c==='BUSINESS'?2:c==='PREMIUM-COACH'?1:0;if(q>p){p=q;best=c;}}
@@ -539,55 +548,22 @@ function deltaSliceIndex(segs){
   }
   return idx;
 }
-function deltaTripUrl(segs){
-  if(!segs.length)return '';
-  const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  const idx=deltaSliceIndex(segs);
-  const parts=[];
-  for(let i=0;i<segs.length;i++){
-    const s=segs[i];const d=new Date(s.ymd+'T00:00:00Z');
-    const mon=months[d.getUTCMonth()],dd=String(d.getUTCDate()).padStart(2,'0'),yyyy=d.getUTCFullYear();
-    const cls=s.cls||'Y',h24=s.depH,mer=h24<12?'A':'P',h12=h24%12;
-    parts.push(idx[i]+':'+cls+':'+s.origin+':'+s.dest+':'+s.carrier+':'+s.num+':'+mon+':'+dd+':'+yyyy+':'+String(h12).padStart(2,'0')+mer);
-  }
-  const fb=fareBasis(segs[0].cls||'Y',segs[0].carrier,segs[0].num);
-  const fareBasisCodes=Array(segs.length).fill(fb).join(':');
-  const total=estimate(segs,Math.max(1,paxSeats())).total.toFixed(2);
-  const uuid=()=>'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16);});
-  const p=[];
-  p.push('cartId='+uuid(),'cacheKeySuffix='+uuid(),'app=sl-sho');
-  parts.forEach((x,i)=>p.push(encodeURIComponent('itinSegment['+i+']')+'='+encodeURIComponent(x)));
-  p.push('tripType='+(segs.length===1?'oneWay':segs.length===2?'roundTrip':'multiCity'));
-  p.push('paxCount='+paxTotal(),'currencyCd=USD','fareBasis='+encodeURIComponent(fareBasisCodes),'price='+total);
-  p.push('numOfSegments='+segs.length,'exitCountry=US','vendorReferrerUrl='+encodeURIComponent('https://matrix.itasoftware.com'));
-  return 'https://www.delta.com/completepurchase/trip-summary?'+p.join('&');
-}
-function alaskaUrl(segs){
-  if(!segs.length)return '';
-  const ft=segs.length===1?'ow':(segs[segs.length-1].dest===segs[0].origin?'rt':'mc');
-  const fs=[];
-  for(let i=0;i<segs.length;i++){
-    const s=segs[i];const d=new Date(s.ymd+'T00:00:00Z');
-    const mmddyyyy=String(d.getUTCMonth()+1).padStart(2,'0')+'/'+String(d.getUTCDate()).padStart(2,'0')+'/'+d.getUTCFullYear();
-    fs.push('F'+(i+1)+'='+encodeURIComponent(s.origin+'|'+s.dest+'|'+mmddyyyy+'|'+s.num+'|f'));
-  }
-  let dest;
-  if(ft==='rt'){
-    const idx=deltaSliceIndex(segs);let last=0;
-    for(let i=0;i<segs.length;i++)if(idx[i]===0)last=i;
-    dest=segs[last].dest;
-  }else{
-    dest=segs[segs.length-1].dest;
-  }
-  const total=estimate(segs,Math.max(1,paxSeats())).total.toFixed(2);
-  const p=['A='+adultEq(),'C='+childEq(),'FT='+ft].concat(fs);
-  p.push('DEST='+encodeURIComponent(dest),'FARE='+total,'frm=cart','META=GOO_CS');
-  return 'https://www.alaskaair.com/planbook/shoppingstart?'+p.join('&');
-}
-
 /* ================= app ================= */
 let pax={adults:1,seniors:0,youths:0,children:0,infantsInSeat:0,infantsInLap:0};
-let lastSegs=[],lastJson='';
+let lastSegs=[],lastJson='',lastSource='',lastInput='';
+function ensureCurrentInput(){if(lastInput!==document.getElementById('gds').value)generate();}
+function updateQuoteStatus(){
+  const input=document.getElementById('quote-time'), el=document.getElementById('quote-status');
+  if(!input||!el)return;
+  // datetime-local is the user's local time; convert to an absolute instant.
+  const d=input.value ? new Date(input.value) : null;
+  const quoted=d && Number.isFinite(d.getTime()) ? d.toISOString() : (input.value || null);
+  const state=assessQuote(quoted);
+  el.textContent=state.message;
+  el.dataset.state=state.state;
+}
+document.getElementById('quote-time')?.addEventListener('change',updateQuoteStatus);
+setInterval(updateQuoteStatus,60000);
 function step(key,d){pax[key]=Math.max(0,pax[key]+d);document.getElementById('v-'+key).textContent=pax[key];if(lastSegs.length)generate();}
 function paxSeats(){return pax.adults+pax.seniors+pax.youths+pax.children+pax.infantsInSeat;}
 function paxTotal(){return paxSeats()+pax.infantsInLap;}
@@ -599,18 +575,31 @@ function paxSummary(){const t=[['adults','adult','adults'],['seniors','senior','
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
 function generate(){
   const text=document.getElementById('gds').value;
-  lastSegs=parseSegments(text);
+  lastInput=text;
   const out=document.getElementById('out');
   const warnEl=document.getElementById('warn');
+  lastSegs=[]; lastJson=''; lastSource='';
+  let imported=null;
+  if(text.trim().startsWith('{')){
+    try { imported=parseMatrixInput(text); lastSegs=imported.segments; lastSource='matrix'; }
+    catch(e){
+      if(warnEl){warnEl.textContent='⚠ '+e.message;warnEl.classList.add('show');}
+      out.textContent='❌ JSON import failed — no legs were silently dropped.';
+      renderDestination(); return;
+    }
+  } else {
+    lastSegs=parseSegments(text);
+    lastSource='gds';
+  }
   if(!lastSegs.length){
     if(warnEl){warnEl.textContent='';warnEl.classList.remove('show');}
     out.textContent='❌ No flight segments recognized — check the GDS text.';
-    renderLive();
+    renderDestination();
     return;
   }
   // never silently drop legs: warn when some segment lines were not recognized
-  const unparsed=unparsedLines(text);
-  const expected=countSegmentLines(text);
+  const unparsed=imported?[]:unparsedLines(text);
+  const expected=imported?lastSegs.length:countSegmentLines(text);
   if(warnEl){
     const msgs=[];
     if(unparsed.length)msgs.push('⚠ '+unparsed.length+' line(s) NOT recognized (check format):\n'+unparsed.join('\n'));
@@ -618,110 +607,126 @@ function generate(){
     if(msgs.length){warnEl.textContent=msgs.join('\n');warnEl.classList.add('show');}
     else{warnEl.textContent='';warnEl.classList.remove('show');}
   }
-  lastJson=JSON.stringify(buildCompleteJson(lastSegs,pax),null,2);
+  lastJson=JSON.stringify(imported?imported.original:buildCompleteJson(lastSegs,pax),null,2);
   const lines=[];
   lines.push('Spicy Link Generator · made by Adham Badran');
   lines.push('PARSED '+lastSegs.length+' SEGMENTS · '+paxSummary());
+  lines.push(imported?'Imported Matrix JSON: original fare fields preserved on copy; passenger controls do not alter imported JSON.':'GDS text: exported price, fare basis and fare construction are SYNTHETIC, not bookable quotes.');
+  lines.push('Selected airline link is labeled by capability. No cart, seat or fare is verified.');
   lines.push('');
   for(const s of lastSegs){
     const op=(s.op && s.op!==s.carrier)?'  op-by '+s.op:'';const mar=s.married?'  MARRIED':'';
     lines.push('  '+ (s.carrier+s.num).padEnd(9)+' '+s.cls+' '+cabinWord(s.cls).padEnd(16)+' '+s.origin+'->'+s.dest+'  '+s.ymd+'  '+pad(s.depH)+':'+pad(s.depM)+' -> '+pad(s.arrH)+':'+pad(s.arrM)+(s.plus?' (+1)':'')+mar+op);
   }
   lines.push('');
-  lines.push('CLASS CHECK: '+lastSegs.map(s=>s.carrier+s.num+': '+s.cls+' = '+cabinWord(s.cls)+' ✓').join('   '));
+  lines.push('CABIN INFERENCE (not verified): '+lastSegs.map(s=>s.carrier+s.num+': '+s.cls+' → '+cabinWord(s.cls)).join('   '));
   out.textContent=lines.join('\n');
-  renderLive();
+  renderDestination();
   toast('Generated '+lastSegs.length+' segments · output ready');
 }
-function copyJson(){if(!lastJson){generate();}copyText(lastJson);toast('JSON copied to clipboard');}
-function copyLink(){if(!lastSegs.length){generate();}if(!lastSegs.length){toast('Paste an itinerary first');return;}copyText(aaMetaUrl(lastSegs));toast('Link copied to clipboard');}
-function smartLink(segs){
-  const cs=new Set(segs.map(s=>s.carrier));
-  if(cs.has('DL'))return {url:deltaTripUrl(segs),label:'Opened Delta.com with your flights pre-selected.'};
-  if(cs.has('AS'))return {url:alaskaUrl(segs),label:'Opened Alaska with your flights pre-selected.'};
-  if(cs.has('UA'))return {url:unitedUrl(segs),label:'Opened United with your flights pre-selected.'};
-  if(cs.has('AA'))return {url:aaMetaUrl(segs),label:'Opened AA.com metasearch with your flights pre-selected.'};
-  return {url:aaMetaUrl(segs),label:'Opened AA.com metasearch with your flights pre-selected (works for any airline).'};
+async function copyJson(){
+  ensureCurrentInput();if(!lastJson)generate();
+  if(!lastJson){toast('No valid JSON to copy');return;}
+  try{await copyText(lastJson);toast(lastSource==='matrix'?'Original JSON copied':'Synthetic JSON copied — not a live fare');}
+  catch(e){toast('Could not copy JSON — check browser clipboard permissions');}
 }
-function genAALink(){
-  if(!lastSegs.length){generate();}
-  if(!lastSegs.length){toast('Paste an itinerary first');return;}
-  // Always open AA.com metasearch — the ITEN embeds ALL flights of ANY airline.
-  const url=aaMetaUrl(lastSegs);
-  try{ copyText(url); }catch(e){}
-  try{ window.open(url,'_blank','noopener,noreferrer'); toast('Opened AA.com with your flights pre-selected'); }
-  catch(e){ toast('Link copied (pop-up blocked — paste it in the browser)'); }
+// Both actions resolve the same selected carrier and the same handoff.
+let selectedCarrier='';
+function selectedLink(){
+  ensureCurrentInput();
+  return resolveAirlineLink(lastSegs,selectedCarrier,pax);
 }
-const YQ_CARRIERS=['BA','EI','IB','LH','AF','KL','VS','QR','EK','TK','SQ','CX','AY','SK','LX','OS','SN'];
-const BOOKABLE=['AA','BA','DL','UA','AS'];
-function bestFare(segs){
-  const seats=Math.max(1,paxSeats());
-  const est=estimate(segs,seats);
-  const yq=est.taxes.find(t=>t.code==='YQ');
-  const yqDelta=yq?yq.amount:0;
-  const base=est.total;
-  const carriers=[...new Set([...BOOKABLE,...segs.map(s=>s.carrier)])];
-  const options=carriers.map(c=>({carrier:c,fare:YQ_CARRIERS.includes(c)?base:Math.max(0,base-yqDelta)})).sort((a,b)=>a.fare-b.fare||(a.carrier<b.carrier?-1:1));
-  return {options,better:options.length?options[0].carrier:''};
+function openSelectedLink(){
+  const result=selectedLink();
+  if(!result.url){toast(result.note);return;}
+  window.open(result.url,'_blank','noopener,noreferrer');
+  toast(result.kind==='homepage'?'Airline homepage opened — search itinerary there':
+    'Link opened — verify flight, passenger form and live fare on airline site');
 }
-function carrierLink(c,segs){
-  return c==='AA'?aaUrl(segs):c==='BA'?baUrl(segs):c==='DL'?deltaTripUrl(segs):c==='UA'?unitedUrl(segs):c==='AS'?alaskaUrl(segs):gfUrl(segs);
+async function copyLink(){
+  const result=selectedLink();
+  if(!result.url){toast(result.note);return;}
+  try{await copyText(result.url);toast(result.kind==='homepage'?'Homepage link copied':'Same airline link copied — verify fare on arrival');}
+  catch(e){toast('Could not copy link — check browser clipboard permissions');}
 }
-/* ============ 4 · Alternative airlines link generator ============ */
-let liveAir='dl';
-function selectAir(id){
-  liveAir=id;
-  if(document.querySelectorAll){
-    document.querySelectorAll('.live-row').forEach(r=>r.classList.toggle('sel', r.getAttribute('data-air')===id));
+function makeAirlineIdentity(option){
+  const identity=document.createElement('span');identity.className='airline-identity';
+  if(option.logoUrl){
+    const img=document.createElement('img');img.className='airline-logo';img.src=option.logoUrl;
+    img.alt='';img.width=30;img.height=30;img.loading='lazy';identity.appendChild(img);
+  }else{
+    const fallback=document.createElement('span');fallback.className='airline-logo airline-logo-text';
+    fallback.textContent=option.carrier;identity.appendChild(fallback);
   }
-  renderLive();
+  const label=document.createElement('span');label.className='airline-label';
+  label.textContent=option.name+' · '+option.carrier;identity.appendChild(label);
+  return identity;
 }
-function renderLive(){
-  const nameEl=document.getElementById('live-name'), routeEl=document.getElementById('live-route'),
-        priceEl=document.getElementById('live-price'), segsEl=document.getElementById('live-segs'),
-        openEl=document.getElementById('live-open');
-  if(!nameEl){return;}
-  if(!lastSegs.length){
-    nameEl.textContent='Select an airline'; routeEl.textContent=''; priceEl.textContent='';
-    segsEl.textContent='';
-    if(openEl)openEl.disabled=true;
-    return;
+function selectCarrier(code){selectedCarrier=code;renderDestination();}
+function renderDestination(){
+  const picker=document.getElementById('airline-picker'),note=document.getElementById('link-note');
+  const generateBtn=document.getElementById('generate-link'),copyBtn=document.getElementById('copy-link');
+  if(!picker||!note||!generateBtn||!copyBtn)return;
+  const options=itineraryAirlines(lastSegs);
+  if(!options.some(o=>o.carrier===selectedCarrier))selectedCarrier=options[0]?.carrier||'';
+  picker.replaceChildren();
+  if(!options.length){
+    selectedCarrier='';note.textContent='Paste an itinerary to see its airlines.';
+    note.dataset.kind='unsupported';generateBtn.disabled=true;copyBtn.disabled=true;
+    generateBtn.textContent='Generate airline link';return;
   }
-  if(openEl)openEl.disabled=false;
-  routeEl.textContent='Route: '+lastSegs[0].origin+lastSegs.map(s=>' → '+s.dest).join('');
-  if(liveAir==='best'){
-    nameEl.textContent='Best fare';
-    const {options,better}=bestFare(lastSegs);
-    priceEl.textContent=options.map(o=>o.carrier+' USD '+o.fare.toFixed(2)).join('  ·  ')+'  →  '+better+' is cheapest  (estimated)';
-  } else {
-    const names={aa:'American Airlines',gf:'Google Flights',ba:'British Airways',dl:'Delta',ua:'United',as:'Alaska'};
-    nameEl.textContent=names[liveAir]||liveAir;
-    const est=estimate(lastSegs,Math.max(1,paxSeats())).total;
-    priceEl.textContent='USD '+est.toFixed(2)+'  (estimated)';
+  const selected=options.find(o=>o.carrier===selectedCarrier);
+  if(options.length===1){
+    const chip=document.createElement('div');chip.className='airline-single';
+    chip.appendChild(makeAirlineIdentity(selected));picker.appendChild(chip);
+  }else{
+    const wrap=document.createElement('div');wrap.className='airline-dropdown';
+    const trigger=document.createElement('button');trigger.type='button';trigger.className='airline-trigger';
+    trigger.setAttribute('aria-haspopup','listbox');trigger.setAttribute('aria-expanded','false');
+    trigger.setAttribute('aria-label','Choose airline for this itinerary');
+    trigger.appendChild(makeAirlineIdentity(selected));
+    const chevron=document.createElement('span');chevron.className='airline-chevron';chevron.textContent='⌄';trigger.appendChild(chevron);
+    const menu=document.createElement('div');menu.className='airline-menu';menu.setAttribute('role','listbox');
+    menu.setAttribute('aria-label','Airlines in this itinerary');menu.hidden=true;
+    const choices=[];
+    const close=(focus=false)=>{menu.hidden=true;trigger.setAttribute('aria-expanded','false');if(focus)trigger.focus();};
+    const open=(index=options.findIndex(o=>o.carrier===selectedCarrier))=>{
+      menu.hidden=false;trigger.setAttribute('aria-expanded','true');choices[index]?.focus();
+    };
+    trigger.addEventListener('click',()=>menu.hidden?open():close());
+    trigger.addEventListener('keydown',e=>{
+      if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();open(e.key==='ArrowDown'?0:choices.length-1);}
+      if(e.key==='Escape')close();
+    });
+    options.forEach((option,index)=>{
+      const choice=document.createElement('button');choice.type='button';choice.className='airline-option';
+      choice.setAttribute('role','option');choice.setAttribute('aria-selected',String(option.carrier===selectedCarrier));
+      choice.appendChild(makeAirlineIdentity(option));
+      choice.addEventListener('click',()=>{selectCarrier(option.carrier);document.querySelector('.airline-trigger')?.focus();});
+      choice.addEventListener('keydown',e=>{
+        if(e.key==='Escape'){e.preventDefault();close(true);}
+        if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+          e.preventDefault();choices[(index+(e.key==='ArrowDown'?1:-1)+choices.length)%choices.length].focus();
+        }
+      });
+      choices.push(choice);menu.appendChild(choice);
+    });
+    wrap.addEventListener('focusout',e=>{if(!wrap.contains(e.relatedTarget))close();});
+    wrap.appendChild(trigger);wrap.appendChild(menu);picker.appendChild(wrap);
   }
-  segsEl.textContent=lastSegs.map(s=>(s.carrier+s.num).padEnd(8)+s.cls+'  '+pad(s.depH)+':'+pad(s.depM)+'→'+pad(s.arrH)+':'+pad(s.arrM)+(s.plus?' (+1)':'')).join('\n');
+  const result=resolveAirlineLink(lastSegs,selectedCarrier,pax);
+  note.textContent=(options.length>1?'Multiple marketing airlines detected. Choose who to visit. ':'')+result.note;
+  note.dataset.kind=result.kind;
+  generateBtn.textContent=result.label;generateBtn.disabled=!result.url;copyBtn.disabled=!result.url;
 }
-function openLive(){
-  if(!lastSegs.length){toast('Paste an itinerary first');return;}
-  let url,label;
-  if(liveAir==='best'){
-    const {better}=bestFare(lastSegs);
-    url=carrierLink(better,lastSegs);
-    label='Best fare: '+better+' — opened their checkout.';
-  } else {
-    const map={aa:aaUrl,gf:gfUrl,ba:baUrl,dl:deltaTripUrl,ua:unitedUrl,as:alaskaUrl};
-    url=map[liveAir](lastSegs);
-    label='Opened the selected airline checkout link.';
+async function copyText(text){
+  if(typeof navigator!=='undefined' && navigator.clipboard?.writeText){
+    try{await navigator.clipboard.writeText(text);return;}catch(e){} // fallback for denied permissions
   }
-  try{ copyText(url); }catch(e){}
-  try{ window.open(url,'_blank','noopener,noreferrer'); toast(label); }
-  catch(e){ toast('Link copied (pop-up blocked — paste it in the browser)'); }
+  const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+  document.body.appendChild(ta);ta.select();const copied=document.execCommand('copy');ta.remove();
+  if(!copied)throw new Error('Clipboard unavailable');
 }
-if(document.querySelectorAll){
-  document.querySelectorAll('.live-row').forEach(r=>r.addEventListener('click',()=>selectAir(r.getAttribute('data-air'))));
-}
-
-function copyText(text){const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}
 
 /* auto-parse: pasting, editing, or pressing Enter runs generate() (the Generate button is gone) */
 (function(){
@@ -734,6 +739,9 @@ function copyText(text){const ta=document.createElement('textarea');ta.value=tex
   });
   autosize();
 })();
+
+// Keep existing inline buttons working after making this script a module.
+Object.assign(window,{step,openSelectedLink,copyLink,copyJson,showCredit,hideCredit,reportBug});
 
 /* ---- credit pop-up (Adham Badran) ---- */
 function showCredit(){
