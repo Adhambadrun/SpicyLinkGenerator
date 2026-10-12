@@ -1,6 +1,6 @@
-// One decision point for BOTH Generate and Copy. AA delegates to the historical
-// handoff unchanged. Other carriers use explicit, unverified search prefills where
-// available, otherwise their directory homepage. No result claims live checkout.
+// One decision point for BOTH Generate and Copy. AA uses the historical metasearch
+// handoff; the app supplies its verbatim legacy builder so mixed itineraries keep every
+// leg. Other carriers use unverified prefills or their directory homepage.
 import { airlineOption, itineraryAirlines } from './airline-directory.js';
 import { buildAAMetasearchUrl } from './aa-handoff.js';
 
@@ -46,21 +46,21 @@ function searchUrl(code,segs,p) {
 }
 
 /** Returns a descriptive outbound link, never a fabricated fare or session. */
-export function resolveAirlineLink(segments, selectedCarrier, passengers) {
+export function resolveAirlineLink(segments, selectedCarrier, passengers, {buildAAUrl=buildAAMetasearchUrl}={}) {
   const options=itineraryAirlines(segments);
   const option=options.find(o=>o.carrier===selectedCarrier);
   if (!option) return {url:null,kind:'unsupported',label:'No airline selected',note:'Choose a carrier in this itinerary.'};
   if (!option.url) return {url:null,kind:'unsupported',label:`${option.name} · no link`,note:'No airline website is listed. Search manually.'};
   const fallback=(reason)=>({url:option.url,kind:'homepage',label:`Visit ${option.name} website`,
     note:`${reason} This opens a homepage, not a selected flight or live fare.`});
-  if (options.length!==1) return fallback('Multiple marketing carriers: a single airline may not sell this entire itinerary.');
   if (selectedCarrier==='AA') {
     try {
-      return {url:buildAAMetasearchUrl(segments,passengers),kind:'aa_handoff',
-        label:'Open AA exact-flight link',
-        note:'Historical AA handoff. Confirm ALL flights, passengers and the live fare at AA’s passenger form; no price is verified here.'};
+      return {url:buildAAUrl(segments,passengers),kind:'aa_handoff',
+        label:'Open AA metasearch link',
+        note:'The historical AA metasearch URL includes every itinerary leg; non-AA-marketed flights may not be pinned, and no live fare is verified.'};
     } catch(e) { return fallback(`AA handoff cannot safely encode this itinerary: ${e.message}`); }
   }
+  if (options.length!==1) return fallback('Multiple marketing carriers: a single airline may not sell this entire itinerary.');
   const url=searchUrl(selectedCarrier,segments,passengers);
   if(url)return {url,kind:'search_unverified',label:`Search ${option.name}`,
     note:'Experimental search prefill. Flight numbers, fare and passenger form are NOT guaranteed; confirm everything on the airline website.'};

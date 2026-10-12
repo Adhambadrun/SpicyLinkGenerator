@@ -56,11 +56,6 @@
   #out{width:100%;min-height:56px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;padding:12px;border:1px solid #33333d;border-radius:8px;background:#0a0a0e;color:#d6e4f5;white-space:pre-wrap;word-break:break-word;scrollbar-color:#2a2a2e #000;scrollbar-width:thin}
   .warn{display:none;margin:0 0 8px;padding:8px 12px;border:1px solid var(--red);border-left:4px solid var(--red);border-radius:8px;background:rgba(224,0,18,.07);color:#ff8890;font-size:12px;font-weight:600;white-space:pre-wrap;word-break:break-word}
   .warn.show{display:block}
-  #quote-time{margin:6px 0;padding:9px 11px;border:1px solid #45454d;border-radius:8px;background:#0d0d12;color:var(--ink);color-scheme:dark}
-  #quote-status{font-weight:700;color:#d6e4f5}
-  #quote-status[data-state="recheck"],#quote-status[data-state="expired"]{color:#ff8890}
-  #quote-status[data-state="recent"]{color:#97dcaa}
-  #quote-time + p + p{font-size:12px;color:var(--muted)}
   .hint{font-size:12px;color:var(--muted);margin-top:7px}
   .credit{margin-top:16px;color:var(--muted);font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:12px}
   .credit-credit{cursor:pointer}
@@ -137,14 +132,6 @@
 </div>
 
 <div class="card first">
-  <p class="step">Quote age · advisory only</p>
-  <label for="quote-time">When was this fare quoted? (your local time)</label>
-  <input id="quote-time" type="datetime-local" aria-describedby="quote-status">
-  <p id="quote-status" role="status">No quote time supplied. Fare and availability not checked.</p>
-  <p>⏱ A timestamp cannot prove a seat or price is available. Reprice with an authorized provider before booking.</p>
-</div>
-
-<div class="card first">
   <p class="step">2 · Passengers</p>
   <div class="paxgrid">
     <div class="field"><label>Adults</label><div class="stepper"><button onclick="step('adults',-1)">−</button><span class="val" id="v-adults">1</span><button onclick="step('adults',1)">+</button></div></div>
@@ -191,9 +178,8 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { parseMatrixInput, assessQuote } from "/booking-tools.js";
+import { parseMatrixInput } from "/booking-tools.js";
 import { airlineOption, itineraryAirlines } from "/airline-directory.js";
-import { buildAAMetasearchUrl } from "/aa-handoff.js";
 import { resolveAirlineLink } from "/airline-links.js";
 /* ================= knowledge bases ================= */
 const MONTHS={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
@@ -480,6 +466,16 @@ function buildCompleteJson(segs,p){
 }
 
 /* ================= links ================= */
+function unixMs(s){const[y,m,d]=s.ymd.split('-').map(Number);const off=tzOffsetMin(s.origin);
+  return Date.UTC(y,m-1,d,s.depH-Math.trunc(off/60),s.depM-(off%60));}
+function aaMetaUrl(segs){
+  const first=segs[0];const paxStr='A'+pax.adults+'S'+pax.seniors+'C'+pax.children+'I'+pax.infantsInSeat+'Y'+pax.youths+'L'+pax.infantsInLap;
+  let legs='';for(const s of segs)legs+='#'+s.origin+'|'+s.dest+'|0|0|'+unixMs(s);
+  let flights='';for(let i=0;i<segs.length;i++){const s=segs[i];flights+='#'+s.carrier+'|'+s.num+'|'+(s.cls||'Y')+'|'+s.origin+'|'+s.dest+'|'+unixMs(s)+'|'+i;}
+  const parts=['DIRECT','0','US',segs.length===1?'oneWay':'multi','4',paxStr,'0',first.origin,'0',first.dest,
+    '0','0','0','0','0','0','0','0.00','1',legs,flights];
+  return 'https://www.aa.com/goto/metasearch?ITEN='+encodeURIComponent(parts.join(','));
+}
 function enc(v){return encodeURIComponent(v);}
 function tripType(segs){if(segs.length===1)return 'oneWay';if(segs.length===2&&segs[0].origin===segs[segs.length-1].dest)return 'roundTrip';return 'multiCity';}
 function cabin(segs){let best='COACH',p=0;for(const s of segs){const c=cabinForCarrier(s.carrier,s.cls);const q=c==='FIRST'?3:c==='BUSINESS'?2:c==='PREMIUM-COACH'?1:0;if(q>p){p=q;best=c;}}
@@ -552,18 +548,6 @@ function deltaSliceIndex(segs){
 let pax={adults:1,seniors:0,youths:0,children:0,infantsInSeat:0,infantsInLap:0};
 let lastSegs=[],lastJson='',lastSource='',lastInput='';
 function ensureCurrentInput(){if(lastInput!==document.getElementById('gds').value)generate();}
-function updateQuoteStatus(){
-  const input=document.getElementById('quote-time'), el=document.getElementById('quote-status');
-  if(!input||!el)return;
-  // datetime-local is the user's local time; convert to an absolute instant.
-  const d=input.value ? new Date(input.value) : null;
-  const quoted=d && Number.isFinite(d.getTime()) ? d.toISOString() : (input.value || null);
-  const state=assessQuote(quoted);
-  el.textContent=state.message;
-  el.dataset.state=state.state;
-}
-document.getElementById('quote-time')?.addEventListener('change',updateQuoteStatus);
-setInterval(updateQuoteStatus,60000);
 function step(key,d){pax[key]=Math.max(0,pax[key]+d);document.getElementById('v-'+key).textContent=pax[key];if(lastSegs.length)generate();}
 function paxSeats(){return pax.adults+pax.seniors+pax.youths+pax.children+pax.infantsInSeat;}
 function paxTotal(){return paxSeats()+pax.infantsInLap;}
@@ -632,13 +616,24 @@ async function copyJson(){
 }
 // Both actions resolve the same selected carrier and the same handoff.
 let selectedCarrier='';
+function selectedLinkFor(segments,carrier=selectedCarrier){
+  return resolveAirlineLink(segments,carrier,pax,{buildAAUrl:aaMetaUrl});
+}
 function selectedLink(){
   ensureCurrentInput();
-  return resolveAirlineLink(lastSegs,selectedCarrier,pax);
+  return selectedLinkFor(lastSegs);
 }
-function openSelectedLink(){
+async function openSelectedLink(){
   const result=selectedLink();
   if(!result.url){toast(result.note);return;}
+  if(result.kind==='aa_handoff'){
+    const copied=copyText(result.url).then(()=>true,()=>false);
+    window.open(result.url,'_blank','noopener,noreferrer');
+    const didCopy=await copied;
+    toast(didCopy?'AA metasearch link copied and opened — verify flights and live fare on arrival':
+      'AA metasearch link opened; clipboard copy failed');
+    return;
+  }
   window.open(result.url,'_blank','noopener,noreferrer');
   toast(result.kind==='homepage'?'Airline homepage opened — search itinerary there':
     'Link opened — verify flight, passenger form and live fare on airline site');
@@ -646,7 +641,9 @@ function openSelectedLink(){
 async function copyLink(){
   const result=selectedLink();
   if(!result.url){toast(result.note);return;}
-  try{await copyText(result.url);toast(result.kind==='homepage'?'Homepage link copied':'Same airline link copied — verify fare on arrival');}
+  try{await copyText(result.url);toast(result.kind==='homepage'?'Homepage link copied':
+    result.kind==='aa_handoff'?'Same AA metasearch link copied — verify flights and live fare on arrival':
+    'Same airline link copied — verify fare on arrival');}
   catch(e){toast('Could not copy link — check browser clipboard permissions');}
 }
 function makeAirlineIdentity(option){
@@ -714,7 +711,7 @@ function renderDestination(){
     wrap.addEventListener('focusout',e=>{if(!wrap.contains(e.relatedTarget))close();});
     wrap.appendChild(trigger);wrap.appendChild(menu);picker.appendChild(wrap);
   }
-  const result=resolveAirlineLink(lastSegs,selectedCarrier,pax);
+  const result=selectedLinkFor(lastSegs,selectedCarrier);
   note.textContent=(options.length>1?'Multiple marketing airlines detected. Choose who to visit. ':'')+result.note;
   note.dataset.kind=result.kind;
   generateBtn.textContent=result.label;generateBtn.disabled=!result.url;copyBtn.disabled=!result.url;
