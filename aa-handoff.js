@@ -20,6 +20,7 @@ const ZONES = Object.freeze({
   FRA:'Europe/Berlin', AMS:'Europe/Amsterdam', MAD:'Europe/Madrid',
   FCO:'Europe/Rome', DUB:'Europe/Dublin', CAI:'Africa/Cairo',
   MEX:'America/Mexico_City', CUN:'America/Cancun',
+  MSY:'America/Chicago', STI:'America/Santo_Domingo',
 });
 
 const formatter = zone => new Intl.DateTimeFormat('en-GB', {
@@ -31,30 +32,46 @@ function localParts(epoch, fmt) {
     .filter(p => p.type !== 'literal').map(p => [p.type, +p.value]));
 }
 
-/** Resolve airport-local wall time, rejecting DST gaps and ambiguous repeated hours. */
+/** Resolve a known airport's local wall time, returning null for unknown zones,
+ * invalid dates/times, and DST gaps or ambiguous repeated hours. */
+export function airportLocalTimeMs(airport, ymd, hour, minute) {
+  const zone = ZONES[airport];
+  if (!zone || !/^\d{4}-\d\d-\d\d$/.test(ymd || '') ||
+      !Number.isInteger(hour) || hour < 0 || hour > 23 ||
+      !Number.isInteger(minute) || minute < 0 || minute > 59) return null;
+  const [year, month, day] = ymd.split('-').map(Number);
+  const wall = Date.UTC(year, month-1, day, hour, minute);
+  if (new Date(wall).toISOString().slice(0,16) !== `${ymd}T${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`)
+    return null;
+  const fmt = formatter(zone);
+  // Every real UTC offset is within 14 hours. Search offsets by 15 min to support
+  // regions with fractional offsets, and accept only one matching instant.
+  const matches = [];
+  for (let minutes=-14*60; minutes<=14*60; minutes+=15) {
+    const epoch = wall-minutes*60000;
+    const p = localParts(epoch,fmt);
+    if (p.year===year && p.month===month && p.day===day && p.hour===hour && p.minute===minute)
+      matches.push(epoch);
+  }
+  return matches.length===1 ? matches[0] : null;
+}
+
+/** Resolve airport-local departure time for the AA handoff, rejecting DST gaps
+ * and ambiguous repeated hours rather than guessing. */
 export function aaDepartureMs(seg) {
   if (Number.isSafeInteger(seg?.depEpochMs)) return seg.depEpochMs;
   if (!/^\d{4}-\d\d-\d\d$/.test(seg?.ymd || '') || !Number.isInteger(seg?.depH) ||
       !Number.isInteger(seg?.depM) || seg.depH < 0 || seg.depH > 23 || seg.depM < 0 || seg.depM > 59)
     throw new Error('AA handoff needs a valid departure date and time.');
-  const zone = ZONES[seg.origin];
-  if (!zone) throw new Error(`No verified timezone mapping for ${seg.origin}; use a timestamped Matrix JSON or search manually.`);
+  if (!ZONES[seg.origin])
+    throw new Error(`No verified timezone mapping for ${seg.origin}; use a timestamped Matrix JSON or search manually.`);
   const [year, month, day] = seg.ymd.split('-').map(Number);
   const wall = Date.UTC(year, month-1, day, seg.depH, seg.depM);
   if (new Date(wall).toISOString().slice(0,16) !== `${seg.ymd}T${String(seg.depH).padStart(2,'0')}:${String(seg.depM).padStart(2,'0')}`)
     throw new Error('Invalid calendar date for AA handoff.');
-  const fmt = formatter(zone);
-  // Every real UTC offset is within 14 hours. Search offsets by 15 min to support
-  // regions with fractional offsets, and require exactly one matching instant.
-  const matches = [];
-  for (let minutes=-14*60; minutes<=14*60; minutes+=15) {
-    const epoch = wall-minutes*60000;
-    const p = localParts(epoch,fmt);
-    if (p.year===year && p.month===month && p.day===day && p.hour===seg.depH && p.minute===seg.depM)
-      matches.push(epoch);
-  }
-  if (matches.length!==1) throw new Error('Ambiguous or nonexistent airport-local departure time; use a timestamped Matrix JSON.');
-  return matches[0];
+  const epoch = airportLocalTimeMs(seg.origin, seg.ymd, seg.depH, seg.depM);
+  if (epoch === null) throw new Error('Ambiguous or nonexistent airport-local departure time; use a timestamped Matrix JSON.');
+  return epoch;
 }
 
 /** Builds the existing AA flight-selection attempt, for AA-marketed legs ONLY.

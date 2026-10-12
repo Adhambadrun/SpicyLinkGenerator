@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { parseMatrixInput } from '../booking-tools.js';
 import { airlineOption, itineraryAirlines } from '../airline-directory.js';
 import { resolveAirlineLink } from '../airline-links.js';
+import { airportLocalTimeMs } from '../aa-handoff.js';
 
 function makeFixture(carriers=['AA']) {
   return JSON.stringify({itinerary:{slices:carriers.map((carrier,i)=>({segments:[{
@@ -41,7 +42,7 @@ async function app({nowIso='2026-10-12T12:00:00Z'}={}) {
   const html=await readFile(new URL('../app.html',import.meta.url),'utf8');
   const match=html.match(/<script type="module">([\s\S]*?)<\/script>/);
   assert.ok(match,'app logic must be a module so its imports actually run');
-  for(const path of ['/booking-tools.js','/airline-directory.js','/airline-links.js'])
+  for(const path of ['/booking-tools.js','/airline-directory.js','/airline-links.js','/aa-handoff.js'])
     assert.ok(match[1].includes(`from "${path}"`),`missing ${path} import`);
   assert.doesNotMatch(html,/quote-age|quote time|quote-time|quote-status|assessQuote/i);
   assert.doesNotMatch(html,/4 · Airlines on this itinerary/);
@@ -56,7 +57,7 @@ async function app({nowIso='2026-10-12T12:00:00Z'}={}) {
     static now(){return new Date(nowIso).getTime();}
   }
   const context=vm.createContext({document,window,parseMatrixInput,airlineOption,itineraryAirlines,
-    resolveAirlineLink,navigator:{clipboard:{writeText:async text=>copied.push(text)}},
+    resolveAirlineLink,airportLocalTimeMs,navigator:{clipboard:{writeText:async text=>copied.push(text)}},
     localStorage:{getItem:()=> '1',setItem(){}},setInterval(){},setTimeout(){},
     TextEncoder,Date:FixedDate,URL,console});
   vm.runInContext(script,context,{filename:'app.html'});
@@ -105,12 +106,67 @@ test('mixed itinerary: selecting AA generates and copies the original URL with e
   assert.match(elements.get('link-note').textContent,/Multiple marketing/);
 });
 
+test('same-day connections across time zones are not rolled just because the local clock moves backward', async () => {
+  const {elements,window}=await app();
+  elements.get('gds').value=[
+    '1 BA 1J 30OCT F NRTLAX SS1  1000P  300P /DCBA /E',
+    '2 AA 2J 30OCT F LAXJFK SS1  400P  1200A  31OCT /DCAA /E',
+  ].join('\n');
+  await window.openSelectedLink();
+  assert.equal(elements.get('warn').textContent,'');
+  const segmentLines=elements.get('out').textContent.split('\n').filter(line=>line.startsWith('  '));
+  assert.match(segmentLines[0],/BA1.*2026-10-30/);
+  assert.match(segmentLines[1],/AA2.*2026-10-30/);
+});
+
+test('status tokens such as SS1 are not accepted as flight numbers when a row is malformed', async () => {
+  const {elements,window}=await app();
+  elements.get('gds').value=[
+    '1 BA 323J 30OCT F CDGLHR SS1  705A  735A /DCBA /E',
+    '2 XX 30OCT F JFKLAX SS1  800A  900A /DCXX /E',
+  ].join('\n');
+  await window.openSelectedLink();
+  assert.match(elements.get('out').textContent,/PARSED 1 SEGMENTS/);
+  assert.doesNotMatch(elements.get('out').textContent,/SS 1/);
+  assert.match(elements.get('warn').textContent,/1 line\(s\) NOT recognized/);
+});
+
+test('duplicate GDS rows are merged before chronology correction', async () => {
+  const {elements,window}=await app();
+  const row='1 AA 12K 30OCT F JFKLAX SS1  800A  1100A /DCAA /E';
+  elements.get('gds').value=[row,row].join('\n');
+  await window.openSelectedLink();
+  assert.match(elements.get('out').textContent,/PARSED 1 SEGMENTS/);
+  assert.match(elements.get('warn').textContent,/Expected 2 segment lines but parsed 1 \(duplicate legs were merged\)/);
+  assert.doesNotMatch(elements.get('warn').textContent,/Inferred date/);
+});
+
+test('exact reported 6-leg itinerary keeps its valid 31OCT date and parses only the six flights', async () => {
+  const {elements,window}=await app();
+  elements.get('gds').value=[
+    '1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E',
+    '2 AA 731I 30OCT F LHRCLT*SS1   955A  250P /DCAA /E',
+    '3 AA2615I 30OCT F CLTMSY*SS1   453P  600P /DCAA /E',
+    '4 AA1917I 31OCT J MIASTI SS1  1205P  215P /DCAA /E',
+    '5 AA1770O 21JAN Q STIMIA*SS1   720A  846A /DCAA /E',
+    '6 AA 112O 21JAN Q MIABCN*SS1   415P  705A  22JAN F /DCAA /E',
+  ].join('\n');
+  await window.openSelectedLink();
+  assert.equal(elements.get('warn').textContent,'');
+  const output=elements.get('out').textContent;
+  assert.match(output,/PARSED 6 SEGMENTS/);
+  assert.doesNotMatch(output,/SS 1/);
+  const segmentLines=output.split('\n').filter(line=>line.startsWith('  '));
+  assert.deepEqual(segmentLines.map(line=>line.trim().split(/\s+/)[0]),['BA323','AA731','AA2615','AA1917','AA1770','AA112']);
+  assert.match(segmentLines[3],/2026-10-31/);
+});
+
 test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, BA falls back clearly for 3-slice multi-city, and all 6 legs are preserved for AA', async () => {
   const gds=[
     '1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E',
     '2 AA 731I 30OCT F LHRCLT*SS1   955A  250P /DCAA /E',
     '3 AA2615I 30OCT F CLTMSY*SS1   453P  600P /DCAA /E',
-    '4 AA1917I 31OCT J MIASTI SS1  1205P  215P /DCAA /E',
+    '4 AA1917I 30OCT J MIASTI SS1  1205P  215P /DCAA /E',
     '5 AA1770O 21JAN Q STIMIA*SS1   720A  846A /DCAA /E',
     '6 AA 112O 21JAN Q MIABCN*SS1   415P  705A  22JAN F /DCAA /E',
   ].join('\n');
@@ -123,9 +179,11 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, BA fall
     // (AA_ACCEPTANCE.md), so the app falls back to the clearly labeled BA homepage.
     await window.openSelectedLink();
     await window.copyLink();
-    assert.equal(elements.get('warn').textContent,'');
+    assert.match(elements.get('warn').textContent,/AA 1917: 2026-10-30 → 2026-10-31/);
+    assert.match(elements.get('warn').textContent,/Verify these dates against the original GDS/);
     const outText=elements.get('out').textContent;
     assert.match(outText,/PARSED 6 SEGMENTS · 1 adult/);
+    assert.doesNotMatch(outText,/SS 1/);
     const segmentLines=outText.split('\n').filter(line=>line.startsWith('  '));
     assert.deepEqual(segmentLines,[
       '  BA323     J BUSINESS         CDG->LHR  2026-10-30  07:05 -> 07:35',

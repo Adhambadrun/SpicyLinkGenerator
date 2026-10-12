@@ -181,6 +181,7 @@
 import { parseMatrixInput } from "/booking-tools.js";
 import { airlineOption, itineraryAirlines } from "/airline-directory.js";
 import { resolveAirlineLink } from "/airline-links.js";
+import { airportLocalTimeMs } from "/aa-handoff.js";
 /* ================= knowledge bases ================= */
 const MONTHS={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
 const AIRLINES={EI:"Aer Lingus",BA:"British Airways",AA:"American",AS:"Alaska",UA:"United",DL:"Delta",AF:"Air France",KL:"KLM",LH:"Lufthansa",IB:"Iberia",QR:"Qatar Airways",EK:"Emirates",TK:"Turkish Airlines",AC:"Air Canada",VS:"Virgin Atlantic",AY:"Finnair",LX:"Swiss",SK:"Scandinavian Airlines",AZ:"ITA Airways",TP:"TAP Air Portugal",B6:"JetBlue",F9:"Frontier",WN:"Southwest"};
@@ -311,7 +312,11 @@ function tryParseLine(line,minDate){
   if(/^\d+$/.test(toks[0]))toks=toks.slice(1);
   if(toks.length<4)return null;
   let carrier=null,num=null,cls='';
-  for(let i=0;i<toks.length;i++){
+  const firstDateIndex=toks.findIndex(t=>/^\d{1,2}[A-Z]{3}$/.test(t));
+  if(firstDateIndex<0)return null;
+  // The carrier/flight-number field precedes the travel date in these GDS rows.
+  // Do not mistake a later status such as SS1/HK1 for an airline and flight number.
+  for(let i=0;i<firstDateIndex;i++){
     const m1=toks[i].match(/^([A-Z0-9]{2})(\d{1,4})([A-Z])$/); if(m1){carrier=m1[1];num=m1[2];cls=m1[3];break;}
     const m2=toks[i].match(/^([A-Z0-9]{2})\*(\d{1,4})$/); if(m2){carrier=m2[1];num=m2[2];if(i+1<toks.length&&/^[A-Z]$/.test(toks[i+1]))cls=toks[i+1];break;}
     const m4=toks[i].match(/^([A-Z0-9]{2})(\d{1,4})$/); if(m4){carrier=m4[1];num=m4[2];if(i+1<toks.length&&/^[A-Z]$/.test(toks[i+1]))cls=toks[i+1];break;}
@@ -339,19 +344,58 @@ function tryParseLine(line,minDate){
   if(toks.some(t=>t==='+1'||t==='¥1'||t==='‡1'||t==='†1'||t==='‡'||t==='†'))plus=true;
   let seats=0,status='';
   const st=toks.find(t=>/^[A-Z]{2}\d$/.test(t)); if(st){status=st.slice(0,2);seats=parseInt(st.slice(-1))||0;}
-  return {carrier,num,cls:cls.toUpperCase(),origin,dest,ymd:ymdFrom(d0,minDate),depH:dep[0],depM:dep[1],arrH:arr[0],arrM:arr[1],plus,op:op||'',married,status,seats};
+  const ymd=ymdFrom(d0,minDate);
+  return {carrier,num,cls:cls.toUpperCase(),origin,dest,ymd,depH:dep[0],depM:dep[1],arrH:arr[0],arrM:arr[1],plus,op:op||'',married,status,seats};
+}
+function rollDateForwardIfOutOfSequence(segment,previous){
+  if(!previous)return;
+  const previousArrivalYmd=previous.plus?addDay(previous.ymd):previous.ymd;
+  let previousArrivalMs=airportLocalTimeMs(previous.dest,previousArrivalYmd,previous.arrH,previous.arrM);
+  // If the previous destination has no verified timezone, its departure still gives
+  // a hard lower bound: a later segment cannot leave before the earlier one took off.
+  if(previousArrivalMs===null)
+    previousArrivalMs=airportLocalTimeMs(previous.origin,previous.ymd,previous.depH,previous.depM);
+  if(previousArrivalMs===null)return;
+
+  const sourceYmd=segment.ymd;
+  let departureMs=airportLocalTimeMs(segment.origin,segment.ymd,segment.depH,segment.depM);
+  if(departureMs===null)return;
+  let days=0;
+  // Dates in an itinerary may be mistyped as the prior calendar day. Roll only as far
+  // as needed to make this segment depart after the prior segment arrives; do not
+  // reorder the source lines to hide a chronology conflict.
+  while(departureMs<previousArrivalMs&&days<3){
+    const nextYmd=addDay(segment.ymd);
+    const nextDepartureMs=airportLocalTimeMs(segment.origin,nextYmd,segment.depH,segment.depM);
+    if(nextDepartureMs===null)return;
+    segment.ymd=nextYmd;
+    departureMs=nextDepartureMs;
+    days++;
+  }
+  if(departureMs<previousArrivalMs){segment.ymd=sourceYmd;return;}
+  if(days)segment.dateInferredFrom=sourceYmd;
 }
 function parseSegments(text){
   const out=[]; const lines=text.split(/\r?\n/);
-  let minDate=null;
+  let minDate=null,previous=null;
+  const seen=new Set();
   for(const raw of lines){
     const line=raw.trim();if(!line)continue;
     const s=tryParseLine(line,minDate);
-    if(s){out.push(s);const [y,m,d]=s.ymd.split('-').map(Number);minDate=new Date(y,m-1,d);}
+    if(s){
+      const sourceKey=s.carrier+'|'+s.num+'|'+s.origin+'|'+s.dest+'|'+s.ymd;
+      if(seen.has(sourceKey))continue;
+      rollDateForwardIfOutOfSequence(s,previous);
+      const key=s.carrier+'|'+s.num+'|'+s.origin+'|'+s.dest+'|'+s.ymd;
+      if(seen.has(key)){seen.add(sourceKey);continue;}
+      seen.add(sourceKey);seen.add(key);
+      out.push(s);previous=s;
+      const [y,m,d]=s.ymd.split('-').map(Number);minDate=new Date(y,m-1,d);
+    }
   }
-  const map={};
-  for(const s of out){const k=s.carrier+'|'+s.num+'|'+s.origin+'|'+s.dest+'|'+s.ymd;if(!map[k])map[k]=s;}
-  return Object.values(map).sort((a,b)=>a.ymd===b.ymd?(a.depH*60+a.depM)-(b.depH*60+b.depM):(a.ymd<b.ymd?-1:1));
+  // Keep the GDS segment order. Sorting by local clock time can put a later-listed
+  // next-day flight before an earlier-listed connection when a date needs correction.
+  return out;
 }
 
 // segment-like lines that failed to parse (so no leg is ever silently dropped)
@@ -375,7 +419,7 @@ function countSegmentLines(text){
 
 /* ================= JSON builder ================= */
 function pad(n){return String(n).padStart(2,'0');}
-function addDay(ymd){const d=new Date(ymd+'T00:00:00Z');d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);}
+function addDay(ymd){const d=new Date(ymd+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10);}
 function iso(s,dep){const h=dep?s.depH:s.arrH,mi=dep?s.depM:s.arrM;let day=s.ymd;if(!dep&&s.plus)day=addDay(s.ymd);
   const tz=dep?AP(s.origin).tz:AP(s.dest).tz;return day+'T'+pad(h)+':'+pad(mi)+':00'+tz;}
 function durationMin(s){const du=s.depH*60+s.depM-tzOffsetMin(s.origin);const au=s.arrH*60+s.arrM+(s.plus?1440:0)-tzOffsetMin(s.dest);let m=au-du;if(m<0)m+=1440;return m;}
@@ -594,6 +638,8 @@ function generate(){
     const msgs=[];
     if(unparsed.length)msgs.push('⚠ '+unparsed.length+' line(s) NOT recognized (check format):\n'+unparsed.join('\n'));
     if(expected>lastSegs.length&&!unparsed.length)msgs.push('⚠ Expected '+expected+' segment lines but parsed '+lastSegs.length+' (duplicate legs were merged).');
+    const inferredDates=lastSegs.filter(s=>s.dateInferredFrom).map(s=>s.carrier+' '+s.num+': '+s.dateInferredFrom+' → '+s.ymd);
+    if(inferredDates.length)msgs.push('⚠ Inferred date(s) to keep the listed flights chronological: '+inferredDates.join(', ')+'. Verify these dates against the original GDS.');
     if(msgs.length){warnEl.textContent=msgs.join('\n');warnEl.classList.add('show');}
     else{warnEl.textContent='';warnEl.classList.remove('show');}
   }

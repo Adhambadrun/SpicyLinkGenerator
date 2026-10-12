@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { aaDepartureMs, buildAAMetasearchUrl } from '../aa-handoff.js';
+import { aaDepartureMs, airportLocalTimeMs, buildAAMetasearchUrl } from '../aa-handoff.js';
 import { parseMatrixInput } from '../booking-tools.js';
 
 const pax={adults:1,seniors:0,children:0,infantsInSeat:0,youths:0,infantsInLap:0};
@@ -30,6 +30,13 @@ test('airport timezone conversion handles daylight saving instead of fixed offse
   assert.equal(winter,Date.parse('2026-11-12T20:45:00Z')); // New York UTC−5
   assert.equal(summer,Date.parse('2026-07-12T19:45:00Z')); // New York UTC−4
   assert.equal(aaDepartureMs(seg('2026-07-12','PHX')),Date.parse('2026-07-12T22:45:00Z'));
+});
+
+test('itinerary chronology can compare local times across DST-aware airport zones', () => {
+  assert.equal(airportLocalTimeMs('CLT','2026-10-30',18,0),Date.parse('2026-10-30T22:00:00Z'));
+  assert.equal(airportLocalTimeMs('MSY','2026-10-30',18,0),Date.parse('2026-10-30T23:00:00Z'));
+  assert.equal(airportLocalTimeMs('MIA','2026-10-30',12,5),Date.parse('2026-10-30T16:05:00Z'));
+  assert.equal(airportLocalTimeMs('ZZZ','2026-10-30',12,5),null);
 });
 
 test('exact timestamp from imported Matrix JSON is used even for airports outside timezone map', () => {
