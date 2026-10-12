@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_FROM_EMAIL,
   describeSendFailure,
+  sendDeliveryTestEmail,
   isTestSender,
   mailConfig,
   missingMailConfig,
@@ -43,7 +44,12 @@ test('the sandbox sender is detected and explained in one short, actionable sent
   assert.match(hint, /resend\.dev/);
   assert.match(hint, /resend\.com\/domains/);
   assert.match(hint, /FROM_EMAIL/);
+  assert.match(hint, /APPROVER_EMAIL/);
+  assert.match(hint, /adhambadraan@gmail\.com/, 'the hint names the inbox the codes actually go to');
+  assert.ok(hint.length < 400, 'the login page shows this sentence — it must stay short');
   assert.equal(senderSetupHint('Spicy Link Generator <login@bcflights.com>'), '');
+  // A custom approver inbox is what the hint points the owner at.
+  assert.match(senderSetupHint('Spicy Link Generator <onboarding@resend.dev>', 'boss@example.com'), /boss@example\.com/);
 
   // The provider's paragraph-long rejection collapses into that same short sentence,
   // flagged as a setup problem so the login page can say so instead of blaming the user.
@@ -53,6 +59,7 @@ test('the sandbox sender is detected and explained in one short, actionable sent
   );
   assert.equal(sandboxFailure.setup, true);
   assert.match(sandboxFailure.error, /could only|test address|resend\.com\/domains/);
+  assert.match(sandboxFailure.error, /adhambadraan@gmail\.com/);
   assert.ok(sandboxFailure.error.length < 400, 'the login page must not be handed a wall of provider text');
 
   const unverifiedDomain = describeSendFailure('The bcflights.com domain is not verified.', 'login@bcflights.com');
@@ -116,7 +123,7 @@ test('missing mail credentials are reported without importing or calling Resend'
   assert.match(out.error, /RESEND_API_KEY/);
 });
 
-test('an email with no recipient is rejected before trying to send', async () => {
+test('an email with no approver inbox is rejected before trying to send', async () => {
   const out = await sendLoginCodeEmail({
     to: '',
     requester: 'person@bcflights.com',
@@ -126,7 +133,8 @@ test('an email with no recipient is rejected before trying to send', async () =>
     fromEmail: DEFAULT_FROM_EMAIL,
   });
   assert.equal(out.ok, false);
-  assert.match(out.error, /no recipient address/);
+  assert.equal(out.setup, true, 'this is a deployment problem, not a visitor mistake');
+  assert.match(out.error, /APPROVER_EMAIL/);
 });
 
 test('a successful provider response is accepted and the sign-in email is escaped', async () => {
@@ -152,4 +160,35 @@ test('a successful provider response is accepted and the sign-in email is escape
   assert.deepEqual(payload.to, ['first@example.com', 'second@example.com']);
   assert.match(payload.html, /&lt;Person&gt;/);
   assert.match(payload.text, /6-digit code: 123456/);
+  // The approver gets the request, the person who asked for it, and the code.
+  assert.match(payload.subject, /Login request — <Person> \(person@bcflights\.com\) — code 123456/);
+  assert.match(payload.html, /is trying to sign in/);
+  assert.match(payload.html, /Send this code to <strong>&lt;Person&gt;<\/strong>/);
+  assert.match(payload.text, /person@bcflights\.com/);
+  assert.ok(!/emailed to person@bcflights\.com/.test(payload.text), 'the code is never addressed to the requester');
+});
+
+test('the delivery test proves the sender and the approver inbox can reach each other', async () => {
+  let payload;
+  const out = await sendDeliveryTestEmail({
+    to: 'adhambadraan@gmail.com',
+    apiKey: 're_test',
+    fromEmail: DEFAULT_FROM_EMAIL,
+    resendClient: {
+      emails: {
+        send: async (value) => {
+          payload = value;
+          return { data: { id: 'test-id' }, error: null };
+        },
+      },
+    },
+  });
+  assert.deepEqual(out, { ok: true, id: 'test-id' });
+  assert.deepEqual(payload.to, ['adhambadraan@gmail.com']);
+  assert.match(payload.subject, /delivery test/i);
+  assert.ok(!/6-digit code: \d{6}/.test(payload.text), 'the test email must never contain a real sign-in code');
+
+  const noRecipient = await sendDeliveryTestEmail({ to: '', apiKey: 're_test', fromEmail: DEFAULT_FROM_EMAIL });
+  assert.equal(noRecipient.ok, false);
+  assert.match(noRecipient.error, /APPROVER_EMAIL/);
 });

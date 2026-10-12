@@ -11,6 +11,7 @@ delete process.env.AUTH_SECRET;
 delete process.env.ALLOWED_DOMAINS;
 delete process.env.ALLOWED_DOMAIN;
 delete process.env.FROM_EMAIL;
+delete process.env.APPROVER_EMAIL;
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +19,9 @@ import assert from 'node:assert/strict';
 const requestCode = (await import('../api/request-code.js')).default;
 const verify = (await import('../api/verify.js')).default;
 const session = (await import('../api/session.js')).default;
-const health = (await import('../api/health.js')).default;
+const healthModule = await import('../api/health.js');
+const health = healthModule.default;
+const probeDelivery = healthModule.probeDelivery;
 
 function stubRes() {
   const res = { statusCode: 0, headers: {}, body: null };
@@ -80,7 +83,8 @@ test('api/request-code needs only an email, then api/verify + api/session comple
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
   assert.ok(res.body.token, 'a signed token must come back');
   assert.match(res.body.devCode, /^\d{6}$/, 'dev mode returns the code so the flow can be tested');
-  assert.match(res.body.message, /lamar\.garcia@bcflights\.com/, 'the code is aimed at the requester, never an approver');
+  assert.match(res.body.message, /adhambadraan@gmail\.com/, 'the approval email is aimed at the approver inbox');
+  assert.match(res.body.message, /lamar\.garcia@bcflights\.com/, 'and it says who is asking for the code');
 
   const v = stubRes();
   await verify(post({ token: res.body.token, code: res.body.devCode, email: 'lamar.garcia@bcflights.com' }), v);
@@ -119,7 +123,7 @@ test('api/request-code falls back to preview debug mode when VERCEL_ENV=preview 
   else process.env.RESEND_API_KEY = previousKey;
 });
 
-test('api/session is 401 without a cookie, api/health is ok and reports mailConfigured', async () => {
+test('api/session is 401 without a cookie, api/health reports the approver inbox and the sender', async () => {
   const s = stubRes();
   await session(get(), s);
   assert.equal(s.statusCode, 401);
@@ -129,14 +133,19 @@ test('api/session is 401 without a cookie, api/health is ok and reports mailConf
   assert.equal(h.statusCode, 200);
   assert.equal(h.body.ok, true);
   assert.equal(h.body.mailConfigured, false);
+  // Every sign-in code is delivered to the approver inbox (APPROVER_EMAIL, default below).
+  assert.equal(h.body.otpRecipient, 'adhambadraan@gmail.com');
   // Without an explicit FROM_EMAIL the sender is onboarding@resend.dev — never an
   // address on one of the sign-in domains.
   assert.equal(h.body.mailFrom, 'Spicy Link Generator <onboarding@resend.dev>');
-  assert.equal(h.body.mailCanSendToUsers, false, 'no API key yet, so nothing can be sent');
+  assert.equal(h.body.sandboxSender, true);
+  assert.equal(h.body.mailReadyToSend, false, 'no API key yet, so nothing can be sent');
   assert.match(h.body.setupHint, /resend\.com\/domains/);
+  assert.match(h.body.setupHint, /adhambadraan@gmail\.com/);
+  assert.equal(h.body.deliveryTestUrl, '/api/health?send=1');
 });
 
-test('api/health warns when the sender is still the resend.dev sandbox address', async () => {
+test('api/health describes the sandbox sender + approver default as usable, not as a failure', async () => {
   const previousKey = process.env.RESEND_API_KEY;
   const previousFrom = process.env.FROM_EMAIL;
   process.env.RESEND_API_KEY = 're_test';
@@ -147,8 +156,57 @@ test('api/health warns when the sender is still the resend.dev sandbox address',
     await health(get(), h);
     assert.equal(h.statusCode, 200);
     assert.equal(h.body.mailConfigured, true);
-    assert.equal(h.body.mailCanSendToUsers, false, 'the sandbox sender can only email the Resend account owner');
-    assert.match(h.body.setupHint, /resend\.com\/domains/);
+    assert.equal(h.body.sandboxSender, true, 'the sandbox sender is reported, not treated as fatal');
+    assert.equal(h.body.mailReadyToSend, true, 'with a key and an approver inbox a send can be attempted');
+    assert.match(h.body.setupHint, /APPROVER_EMAIL/);
+  } finally {
+    if (previousKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousKey;
+    if (previousFrom === undefined) delete process.env.FROM_EMAIL;
+    else process.env.FROM_EMAIL = previousFrom;
+  }
+});
+
+test('probeDelivery mails the approver inbox, reports Resend’s answer, and rate-limits itself', async () => {
+  const previousKey = process.env.RESEND_API_KEY;
+  const previousFrom = process.env.FROM_EMAIL;
+  process.env.RESEND_API_KEY = 're_test';
+  process.env.FROM_EMAIL = 'Spicy Link Generator <onboarding@resend.dev>';
+
+  try {
+    let payload = null;
+    const ok = await probeDelivery({
+      resendClient: {
+        emails: {
+          send: async (value) => {
+            payload = value;
+            return { data: { id: 'probe-id' }, error: null };
+          },
+        },
+      },
+    });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.delivery.ok, true);
+    assert.deepEqual(payload.to, ['adhambadraan@gmail.com'], 'the probe only ever mails the approver');
+    assert.match(ok.delivery.message, /adhambadraan@gmail\.com/);
+
+    // A second immediate probe must not email the approver again — also via the URL form.
+    const throttled = await probeDelivery({
+      resendClient: {
+        emails: {
+          send: async () => {
+            throw new Error('must not be called');
+          },
+        },
+      },
+    });
+    assert.equal(throttled.status, 429);
+    assert.equal(throttled.delivery.ok, false);
+    assert.match(throttled.delivery.error, /wait/i);
+
+    const h = stubRes();
+    await health({ ...get(), url: '/api/health?send=1' }, h);
+    assert.equal(h.statusCode, 429, 'the cooldown applies to the URL form too');
   } finally {
     if (previousKey === undefined) delete process.env.RESEND_API_KEY;
     else process.env.RESEND_API_KEY = previousKey;
