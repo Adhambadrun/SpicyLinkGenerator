@@ -1,12 +1,14 @@
 // One decision point for BOTH Generate and Copy. AA uses the historical metasearch
-// handoff. BA emits NO link at all: real-browser runs on 2026-10-12 (one-way AND
-// round-trip) hung forever on BA's "Give us a moment, we're calculating your price"
-// page, so the processOffer handoff is unusable for real users — outcome BLOCKED in
-// AA_ACCEPTANCE.md. Every BA shape therefore falls back to the clearly labeled BA
-// homepage with the limitation in the note. The O&D slice gate and the legacy builder
-// are retained, but only as manual re-probing tools: nothing in this module calls the
-// builder, so an injected URL builder cannot resurrect the link. Other carriers use
-// unverified direct-search prefills or their directory homepage.
+// handoff. BA gets NO itinerary prefill, because none exists that we can prove:
+// real-browser runs on 2026-10-12 (one-way AND round-trip) hung forever on BA's
+// "Give us a moment, we're calculating your price" page — outcome BLOCKED in
+// AA_ACCEPTANCE.md — and the rendering probes re-run on 2026-10-12 show BA's own
+// search form ignores every prefill parameter tried. So every BA shape opens BA's own
+// multi-city search form (HTTP 200, form renders instantly, no spinner) with the exact
+// itinerary to type spelled out in the note, plus a clearly labeled pre-filled
+// third-party search as the alternative. Nothing in this module calls the legacy
+// processOffer builder, so an injected URL builder cannot resurrect the blocked link.
+// Other carriers use unverified direct-search prefills or their directory homepage.
 import { airlineOption, itineraryAirlines } from './airline-directory.js';
 import { buildAAMetasearchUrl } from './aa-handoff.js';
 
@@ -67,7 +69,42 @@ function baSliceIndex(segs) {
 // user — is still computed in one place, and so the legacy builder keeps refusing any
 // multi-city shape.
 const BA_MAX_SLICES=2;
-const BA_HANDOFF_BLOCKED='BA offer-search handoff is unusable: real-browser runs on 2026-10-12 hung forever on BA’s “Give us a moment, we’re calculating your price” page for both the one-way and the round-trip link (AA_ACCEPTANCE.md).';
+// BA's own multi-city search form. Recorded 2026-10-12 (rendering fetch from this repo's
+// probe host, no login, no cookies, search input only): HTTP 200, title "British Airways -
+// Multi-city Flight Search", the form renders immediately — no spinner, no redirect — and
+// exposes From/To/Date rows with "Remove flight" / "Add another flight", passenger counts
+// and a travel-class selector. It IGNORES every prefill parameter probed:
+//   ?onds=CDG-LHR_2026-10-30&ad=1&yad=0&ch=0&inf=0&cabin=C&flex=LOWEST&ond=1   (and the
+//   2-slice / 3-slice variants, and the same payload as a #fragment)
+//   ?tripType=ONE_WAY&from=CDG&to=LHR&departDate=30/10/2026&cabinclass=C&adult=1
+// so it can only be handed over EMPTY, with the itinerary to type stated in the note.
+const BA_SEARCH_FORM_URL='https://www.britishairways.com/travel/book/public/en_gb/flightSearch';
+const BA_NO_PREFILL='BA has no working pre-filled link: the offer-search handoff hangs forever on BA’s “Give us a moment, we’re calculating your price” page (real-browser runs 2026-10-12, AA_ACCEPTANCE.md) and BA’s own search form ignores URL parameters (re-verified 2026-10-12), so it opens EMPTY.';
+const BA_CABIN_WORD={F:'first',C:'business',W:'premium economy',M:'economy'};
+/** Defence in depth: no BA URL may ever leave this module pointing at the blocked handoff. */
+function assertNotBlockedBaHandoff(url) {
+  if (/processOffer|search-journey-id|[?&]cid=/i.test(url))
+    throw new Error('Refusing to emit a BA URL that is recorded BLOCKED in AA_ACCEPTANCE.md.');
+  return url;
+}
+function baPassengerSummary(passengers) {
+  const c=counts(passengers);
+  if(!c)return null;
+  const parts=[];
+  if(c.adults)parts.push(`${c.adults} adult${c.adults===1?'':'s'}`);
+  if(c.children)parts.push(`${c.children} child${c.children===1?'':'ren'}`);
+  if(c.infants)parts.push(`${c.infants} infant${c.infants===1?'':'s'} on lap`);
+  return parts.join(', ');
+}
+/** "CDG→LHR on 2026-10-30, LHR→CDG on 2026-11-06 (business, 1 adult)" — what to type into BA's form. */
+function baItinerarySummary(segments, passengers) {
+  if (baSegmentsMalformed(segments)) return null;
+  const journeys=baOndJourneys(segments);
+  const cabin=BA_CABIN_WORD[baCabinCode(segments)]||'economy';
+  const pax=baPassengerSummary(passengers);
+  const route=journeys.map(j=>`${j.o}→${j.d} on ${j.date}`).join(', ');
+  return `${route} (${cabin}${pax?`, ${pax}`:''})`;
+}
 function baOndJourneys(segments) {
   const idx=baSliceIndex(segments);
   const journeys=[];let cur=-1;
@@ -77,13 +114,19 @@ function baOndJourneys(segments) {
   }
   return journeys;
 }
+/** Collapsed O&D slices, shared with app.html so the alternative third-party search
+ *  pre-fills one slice per row instead of one row per connection leg. */
+export function ondSlices(segments) {
+  if (baSegmentsMalformed(segments)) return [];
+  return baOndJourneys(segments).map(j=>({origin:j.o,dest:j.d,ymd:j.date}));
+}
 function baSegmentsMalformed(segments) {
   return !Array.isArray(segments) || !segments.length ||
     segments.some(s=>!/^[A-Z]{3}$/.test(s?.origin||'') || !/^[A-Z]{3}$/.test(s?.dest||'') || !/^\d{4}-\d\d-\d\d$/.test(s?.ymd||''));
 }
 function baUnsupportedSlices(journeys) {
   return journeys.length>BA_MAX_SLICES
-    ? `BA offer-search links support one-way and round-trip only; this itinerary needs ${journeys.length} O&D slices (multi-city). Search the full itinerary directly on ba.com.`
+    ? `BA’s offer-search handoff supports one-way and round-trip only; this itinerary needs ${journeys.length} O&D slices (multi-city).`
     : null;
 }
 /** Legacy BA O&D builder, kept ONLY for manual re-probing (tools/ba-live-probe.mjs).
@@ -152,11 +195,26 @@ export function resolveAirlineLink(segments, selectedCarrier, passengers, {build
     } catch(e) { return fallback(`AA handoff cannot safely encode this itinerary: ${e.message}`); }
   }
   if (selectedCarrier==='BA') {
-    // No BA builder is called: the processOffer handoff is BLOCKED for real users, so a
-    // third-party or legacy URL builder must never be able to put it back in the UI.
-    // Only the shape gate is still evaluated, to state the multi-city limitation.
-    const unsupported=baSegmentsMalformed(segments)?null:baUnsupportedSlices(baOndJourneys(segments));
-    return fallback(unsupported?`${unsupported} ${BA_HANDOFF_BLOCKED}`:BA_HANDOFF_BLOCKED);
+    // No BA prefill builder is called: the processOffer handoff is BLOCKED for real users
+    // and BA's search form ignores URL parameters, so a third-party or legacy URL builder
+    // must never be able to put a "pre-filled BA link" back in the UI. BA gets its own
+    // search surface — the one BA page recorded rendering instantly with no spinner — and
+    // the note spells out exactly what to type, because the form opens empty.
+    const malformed=baSegmentsMalformed(segments);
+    const journeys=malformed?[]:baOndJourneys(segments);
+    const summary=baItinerarySummary(segments,passengers);
+    const enter=journeys.length===1
+      ? `Fill “Flight 1” with ${summary} and remove the other rows.`
+      : journeys.length===2
+        ? `Fill one row per O&D slice — ${summary} — and remove the third row.`
+        : `Fill one row per O&D slice${summary?` — ${summary}`:''} (“Add another flight” if you need more rows).`;
+    const gate=baUnsupportedSlices(journeys);
+    const note=gate
+      ? `${BA_NO_PREFILL} ${enter} ${gate} The retained O&D gate still refuses to build an offer-search link for it. No flight is selected and no fare is shown or claimed here.`
+      : `${BA_NO_PREFILL} ${enter} No flight is selected and no fare is shown or claimed here.`;
+    return {url:assertNotBlockedBaHandoff(BA_SEARCH_FORM_URL),kind:'search_unverified',
+      label:'Open BA search form',note,manualEntry:true,
+      manualEntryHint:summary?`Type into BA's form: ${summary}`:'Type the itinerary into BA’s form.'};
   }
   if (options.length!==1) return fallback('Multiple marketing carriers: a single airline may not sell this entire itinerary.');
   const url=searchUrl(selectedCarrier,segments,passengers);

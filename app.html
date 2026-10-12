@@ -147,6 +147,7 @@
   <div class="row">
     <button class="btn g" id="generate-link" onclick="openSelectedLink()" disabled>Generate airline link</button>
     <button class="btn y" id="copy-link" onclick="copyLink()" disabled>Copy same link</button>
+    <button class="btn b" id="alternative-search" onclick="openAlternativeSearch()" hidden>Pre-filled Google Flights search (not BA)</button>
   </div>
 </div>
 
@@ -180,7 +181,7 @@
 <script type="module">
 import { parseMatrixInput } from "/booking-tools.js";
 import { airlineOption, itineraryAirlines } from "/airline-directory.js";
-import { resolveAirlineLink } from "/airline-links.js";
+import { resolveAirlineLink, ondSlices } from "/airline-links.js";
 import { airportLocalTimeMs } from "/aa-handoff.js";
 /* ================= knowledge bases ================= */
 const MONTHS={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
@@ -633,8 +634,9 @@ async function copyJson(){
 // Both actions resolve the same selected carrier and the same handoff.
 let selectedCarrier='';
 function selectedLinkFor(segments,carrier=selectedCarrier){
-  // No BA builder is injected: BA's handoff is BLOCKED (AA_ACCEPTANCE.md, 2026-10-12),
-  // so resolveAirlineLink returns the clearly labeled BA homepage for every BA shape.
+  // No BA prefill builder is injected: BA's offer-search handoff is BLOCKED and BA's own
+  // search form ignores URL parameters (AA_ACCEPTANCE.md, 2026-10-12), so resolveAirlineLink
+  // returns BA's empty multi-city search form plus the itinerary to type in the note.
   return resolveAirlineLink(segments,carrier,pax,{buildAAUrl:aaMetaUrl});
 }
 function selectedLink(){
@@ -653,7 +655,8 @@ async function openSelectedLink(){
     return;
   }
   window.open(result.url,'_blank','noopener,noreferrer');
-  toast(result.kind==='homepage'?'Airline homepage opened — search itinerary there':
+  toast(result.manualEntry?'BA search form opened EMPTY — type the itinerary exactly as the note spells it out':
+    result.kind==='homepage'?'Airline homepage opened — search itinerary there':
     'Link opened — verify flight, passenger form and live fare on airline site');
 }
 async function copyLink(){
@@ -663,6 +666,25 @@ async function copyLink(){
     result.kind==='aa_handoff'?'Same AA metasearch link copied — verify flights and live fare on arrival':
     'Same airline link copied — verify fare on arrival');}
   catch(e){toast('Could not copy link — check browser clipboard permissions');}
+}
+/* BA has no pre-filled handoff (AA_ACCEPTANCE.md, 2026-10-12), so next to BA's own EMPTY
+   search form the app offers a clearly labeled third-party search that IS pre-filled with
+   the same itinerary. It is built from the collapsed O&D slices (ondSlices), so a
+   connection stays one row instead of becoming two one-way searches, and it is never
+   presented as an airline booking or a fare. */
+function alternativeSearchUrl(){
+  const slices=ondSlices(lastSegs);
+  return slices.length?gfUrl(slices):null;
+}
+async function openAlternativeSearch(){
+  ensureCurrentInput();
+  const url=alternativeSearchUrl();
+  if(!url){toast('No parsed itinerary to search yet');return;}
+  const copied=copyText(url).then(()=>true,()=>false);
+  window.open(url,'_blank','noopener,noreferrer');
+  const didCopy=await copied;
+  toast(didCopy?'Google Flights search opened and copied — third-party search, NOT a BA booking or fare':
+    'Google Flights search opened — third-party search, NOT a BA booking or fare');
 }
 function makeAirlineIdentity(option){
   const identity=document.createElement('span');identity.className='airline-identity';
@@ -681,6 +703,7 @@ function selectCarrier(code){selectedCarrier=code;renderDestination();}
 function renderDestination(){
   const picker=document.getElementById('airline-picker'),note=document.getElementById('link-note');
   const generateBtn=document.getElementById('generate-link'),copyBtn=document.getElementById('copy-link');
+  const altBtn=document.getElementById('alternative-search');
   if(!picker||!note||!generateBtn||!copyBtn)return;
   const options=itineraryAirlines(lastSegs);
   if(!options.some(o=>o.carrier===selectedCarrier))selectedCarrier=options[0]?.carrier||'';
@@ -688,6 +711,7 @@ function renderDestination(){
   if(!options.length){
     selectedCarrier='';note.textContent='Paste an itinerary to see its airlines.';
     note.dataset.kind='unsupported';generateBtn.disabled=true;copyBtn.disabled=true;
+    if(altBtn){altBtn.hidden=true;altBtn.disabled=true;}
     generateBtn.textContent='Generate airline link';return;
   }
   const selected=options.find(o=>o.carrier===selectedCarrier);
@@ -730,9 +754,14 @@ function renderDestination(){
     wrap.appendChild(trigger);wrap.appendChild(menu);picker.appendChild(wrap);
   }
   const result=selectedLinkFor(lastSegs,selectedCarrier);
-  note.textContent=(options.length>1?'Multiple marketing airlines detected. Choose who to visit. ':'')+result.note;
+  note.textContent=(options.length>1?'Multiple marketing airlines detected. Choose who to visit. ':'')+result.note+
+    (result.manualEntry?' Alternative: the button below opens a pre-filled Google Flights search for the same O&D slices — a third-party search, NOT a BA booking and not a BA fare.':'');
   note.dataset.kind=result.kind;
   generateBtn.textContent=result.label;generateBtn.disabled=!result.url;copyBtn.disabled=!result.url;
+  if(altBtn){
+    const offer=!!result.manualEntry&&!!alternativeSearchUrl();
+    altBtn.hidden=!offer;altBtn.disabled=!offer;
+  }
 }
 async function copyText(text){
   if(typeof navigator!=='undefined' && navigator.clipboard?.writeText){
@@ -756,7 +785,7 @@ async function copyText(text){
 })();
 
 // Keep existing inline buttons working after making this script a module.
-Object.assign(window,{step,openSelectedLink,copyLink,copyJson,showCredit,hideCredit,reportBug});
+Object.assign(window,{step,openSelectedLink,copyLink,openAlternativeSearch,copyJson,showCredit,hideCredit,reportBug});
 
 /* ---- credit pop-up (Adham Badran) ---- */
 function showCredit(){
