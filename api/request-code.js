@@ -1,9 +1,9 @@
 // POST /api/request-code
-// Validates the email domain (@bcflights.com / @travelbusinessclass.com), generates a 6-digit code, signs a token,
-// and emails the code — plus who is asking for it — to the approver
-// (adhambadraan@gmail.com) via Resend.
+// Validates the email domain (@bcflights.com / @travelbusinessclass.com), generates a 6-digit code,
+// signs a token, and emails the code straight to the address that asked for it — the person
+// signing in — via Resend. No approver relay: the requester's own inbox is the destination.
 import { handleRequestCode, DEFAULT_AUTH_SECRET, warnIfDefaultSecret } from '../lib/core.js';
-import { mailConfig, missingMailConfig, sendApprovalEmail } from '../lib/mailer.js';
+import { mailConfig, missingMailConfig, sendLoginCodeEmail } from '../lib/mailer.js';
 
 const SECRET = process.env.AUTH_SECRET || DEFAULT_AUTH_SECRET;
 warnIfDefaultSecret(SECRET);
@@ -39,7 +39,7 @@ export default async function handler(req, res) {
     // handler. The local dev server has its own mailer and can opt into a real
     // send; the protected preview fallback should not accidentally email live
     // addresses when no Resend key is configured there.
-    sendEmail: debugMode ? undefined : (payload) => sendApprovalEmail({ ...payload, apiKey, fromEmail }),
+    sendEmail: debugMode ? undefined : (payload) => sendLoginCodeEmail({ ...payload, apiKey, fromEmail }),
     devMode: debugMode,
     debugModeLabel: previewDebugMode ? 'PREVIEW MODE' : 'LOCAL MODE',
   });

@@ -4,16 +4,16 @@
 //   npm run dev            # or: node dev-server.mjs
 //   → http://localhost:8080
 //
-// The approval email is sent for real (Resend → adhambadraan@gmail.com) when the key is
-// reachable, and the 6-digit code is ALSO printed here on screen + in the console, so the
+// The sign-in email is sent for real (Resend → the address that asked for the code) when
+// the key is reachable, and the 6-digit code is ALSO printed here in the console, so the
 // whole 2FA flow can be walked even on a machine with no outbound network.
 
 import http from 'http';
 import { readFile } from 'fs/promises';
 import { join, extname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { handleRequestCode, handleVerify, handleSession, approverEmail, DEFAULT_AUTH_SECRET, warnIfDefaultSecret } from './lib/core.js';
-import { mailConfig, sendApprovalEmail } from './lib/mailer.js';
+import { handleRequestCode, handleVerify, handleSession, DEFAULT_AUTH_SECRET, warnIfDefaultSecret } from './lib/core.js';
+import { mailConfig, sendLoginCodeEmail } from './lib/mailer.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -44,18 +44,18 @@ const MIME = {
 };
 
 // The dev server prints every request so the local flow can be completed even
-// without email. If a key is configured, it also sends the same approval email
-// used by the deployed API.
+// without email. If a key is configured, it also sends the same sign-in email
+// used by the deployed API — to the address that asked for the code.
 async function sendEmail(payload) {
-  const { to, requester, name, code } = payload;
+  const { to, name, code } = payload;
   console.log(
-    `\n[LOGIN REQUEST]\n  Name:          ${name}\n  Email:         ${requester}\n  6-digit code:  ${code}\n  Approver:      ${to}\n`
+    `\n[LOGIN REQUEST]\n  Name:          ${name}\n  Code sent to:  ${to}\n  6-digit code:  ${code}\n`
   );
 
   const config = mailConfig();
-  const result = await sendApprovalEmail({ ...payload, ...config });
-  if (result.ok) console.log(`[dev] approval email sent to ${to}`);
-  else if (config.apiKey) console.error('[dev] approval email failed:', result.error);
+  const result = await sendLoginCodeEmail({ ...payload, ...config });
+  if (result.ok) console.log(`[dev] sign-in code emailed to ${to}`);
+  else if (config.apiKey) console.error('[dev] sign-in email failed:', result.error);
   else console.log('[dev] no RESEND_API_KEY configured; the local code is shown in the response.');
   return result;
 }
@@ -104,7 +104,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         app: 'Spicy Link Generator',
         api: 'v1',
-        approver: approverEmail(),
+        otpRecipient: 'the address requesting the code',
         mailConfigured: Boolean(config.apiKey),
         mailFrom: config.fromEmail,
       });
@@ -132,6 +132,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Spicy Link Generator (2FA) dev server → http://localhost:${PORT}`);
-  console.log(`Approval emails go to ${approverEmail()} · sender: ${STARTUP_MAIL_CONFIG.fromEmail}`);
+  console.log(`Sign-in codes go to the address that asks for them · sender: ${STARTUP_MAIL_CONFIG.fromEmail}`);
   console.log(`Email provider: ${STARTUP_MAIL_CONFIG.apiKey ? 'Resend configured' : 'not configured (local code will be shown)'}`);
 });

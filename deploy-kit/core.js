@@ -3,7 +3,7 @@
 //
 //   1) user enters their @bcflights.com or @travelbusinessclass.com email (no name is asked for)
 //   2) request code -> sign { email, name (derived from the email), codeHash, exp, attempts }
-//   3) email name + email + code to the approver (adhambadraan@gmail.com by default)
+//   3) email the 6-digit code straight to the address that asked for it (the person signing in)
 //   4) verify       -> check signature/expiry/code -> sign a session cookie (stays alive while the tab is open)
 //
 // Domain-locked to @bcflights.com and @travelbusinessclass.com by default
@@ -54,8 +54,6 @@ export const allowedDomainsLabel = () => {
   const list = allowedDomains().map((d) => `@${d}`);
   return list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} or ${list[list.length - 1]}`;
 };
-export const approverEmail = () => process.env.APPROVER_EMAIL || 'adhambadraan@gmail.com';
-
 export const CODE_TTL_MS = 10 * 60 * 1000;          // code lives 10 minutes
 export const MAX_ATTEMPTS = 5;                       // wrong-code tries before a new code is required
 // Sessions do NOT time out while the tab is open: every heartbeat (/api/session) rolls the
@@ -96,8 +94,8 @@ export function unsign(token, secret) {
 const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 
 // The login page no longer asks for a name, so we build a readable one from the
-// email local-part ("lamar.garcia@…" → "Lamar Garcia"). It is only used as a label
-// in the approval email — never as an identity check.
+// email local-part ("lamar.garcia@…" → "Lamar Garcia"). It is only used as a greeting
+// in the sign-in email — never as an identity check.
 export function displayNameFromEmail(email) {
   const local = String(email || '')
     .split('@')[0]
@@ -115,7 +113,7 @@ export function displayNameFromEmail(email) {
   return pretty || local || 'Unknown user';
 }
 
-export async function handleRequestCode({ email, secret, sendEmail, devMode = false }) {
+export async function handleRequestCode({ email, secret, sendEmail, devMode = false, debugModeLabel = 'LOCAL MODE' }) {
   const e = String(email || '').trim().toLowerCase();
   if (!EMAIL_RE.test(e)) return { status: 400, json: { error: 'Enter a valid email address.' } };
   if (!isAllowedDomain(e.split('@')[1]))
@@ -128,16 +126,20 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
     secret
   );
 
+  // The code always goes to the address that asked for it — the person signing in.
+  // There is no approver relay: the email address itself is the delivery address,
+  // and the domain lock (above) is what decides who may ask for a code at all.
   const sent =
     typeof sendEmail === 'function'
-      ? await sendEmail({ to: approverEmail(), requester: e, name: n, code })
+      ? await sendEmail({ to: e, requester: e, name: n, code })
       : false;
   const sentOk = sent === true || (sent && sent.ok === true);
   const sentErr = (sent && typeof sent.error === 'string' && sent.error) || '';
 
   if (devMode) {
-    // Local testing only — never enabled in production. The code is always handed back so the
-    // flow can be completed even when no email could go out (e.g. no outbound network).
+    // Local testing or protected preview only. The code is handed back so the
+    // flow can still be completed when no provider send is possible.
+    const label = String(debugModeLabel || 'DEBUG MODE').trim() || 'DEBUG MODE';
     return {
       status: 200,
       json: {
@@ -145,16 +147,16 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
         token,
         devCode: code,
         message: sentOk
-          ? `LOCAL MODE — approval email sent to ${approverEmail()}. Code also shown below.`
-          : `LOCAL MODE — approval email NOT sent (${sentErr || 'no sender configured'}). Code shown below.`,
+          ? `${label} — sign-in code emailed to ${e}. Code also shown below.`
+          : `${label} — sign-in code for ${e} could not be emailed (${sentErr || 'no sender configured'}). Code shown below.`,
       },
     };
   }
 
   if (!sentOk) {
-    return { status: 502, json: { error: sentErr || 'Could not send the approval email. Check the server email configuration.' } };
+    return { status: 502, json: { error: sentErr || 'Could not send the sign-in code email. Check the server email configuration.' } };
   }
-  return { status: 200, json: { ok: true, token, message: `A 6-digit code was sent to the approver for ${n} (${e}).` } };
+  return { status: 200, json: { ok: true, token, message: `A 6-digit code was emailed to ${e}.` } };
 }
 
 export function handleVerify({ token, code, email, secret }) {

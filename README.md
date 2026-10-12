@@ -13,11 +13,11 @@ Made by Lamar García · lamar@bcflights.com
    field** (no name is asked for).
 2. The server checks the domain (any other domain is rejected) and generates a
    **6-digit code**.
-3. The code is emailed to the **approver** (`adhambadraan@gmail.com` by default) —
-   *not* to the user. The email shows **who is asking**: the name (built from the email
-   address, e.g. `lamar.garcia@…` → *Lamar Garcia*), the full email, and the code.
-4. The approver relays the code to the user (Slack/Teams/text — your choice).
-5. The user enters the code; the server verifies it and opens the app.
+3. The code is emailed **straight to the address that asked for it** — the person signing
+   in. Nobody else is involved and nothing is relayed by hand. The email greets them by
+   name (built from the address, e.g. `lamar.garcia@…` → *Lamar Garcia*) and the subject
+   line carries the code.
+4. The user enters the code from their inbox; the server verifies it and opens the app.
 
 Security properties:
 - Codes are HMAC-SHA256 signed and stateless — they cannot be forged or replayed,
@@ -25,7 +25,12 @@ Security properties:
 - Sessions are signed httpOnly cookies. They **stay signed in for as long as the tab is open**
   (no idle timeout); the only thing that ends a session is closing the tab (see below).
 - Domain lock is enforced server-side (not just in the browser).
-- The code is **never** returned to the browser in production — only the approver sees it.
+- The code is **never** returned to the browser in production — it only exists in the
+  sign-in email.
+- Trade-off to know about: because the code goes to the requester, **anyone with a mailbox
+  on an allowed domain can sign in on their own** — the human approval step is gone and the
+  allowed-domain list is the gate. To go back to human-in-the-loop approval, point
+  `to:` in `handleRequestCode` (`lib/core.js`) at a fixed approver address again.
 
 ### Dead end for outsiders
 
@@ -43,8 +48,8 @@ the dead end again. Only a brand-new tab gets a fresh login form.
   asks for a **new OTP**. Only a new login code is required; nothing else prompts for one.
 - If the server reports the session is no longer valid, the page sends the user back to login.
 
-> This is a *human-in-the-loop* approval flow by design: nobody can get in unless
-> you personally hand them a fresh code.
+> The 6-digit code is delivered to the person signing in, so a fresh code is required
+> for every new tab — but there is no human approval step in the middle any more.
 
 ---
 
@@ -56,7 +61,7 @@ spicy-link-generator/
 ├── app.html            ← the actual tool (redirects to login if no session)
 ├── logo.png            ← app logo
 ├── api/
-│   ├── request-code.js ← POST  validate domain → generate code → email approver (Resend)
+│   ├── request-code.js ← POST  validate domain → generate code → email the requester (Resend)
 │   ├── verify.js       ← POST  check code → set session cookie
 │   ├── session.js      ← GET   is the visitor signed in?
 │   └── health.js       ← GET   deployment smoke test
@@ -82,9 +87,10 @@ npm run dev          # or: node dev-server.mjs
 ```
 
 Open http://localhost:8080 and use any `name@bcflights.com` or `name@travelbusinessclass.com` address. The dev server always
-prints the request (name, email, code) in its console, so the flow can be finished locally.
-If a `RESEND_API_KEY` is present in `.env`, it also sends the real approval email using the
-same mailer as production; without one, the local code is returned for development only.
+prints the request (name, recipient, code) in its console, so the flow can be finished locally.
+If a `RESEND_API_KEY` is present in `.env`, it also sends the real sign-in email to the
+address that asked for the code, using the same mailer as production; without one, the local
+code is returned for development only.
 
 ```bash
 npm test             # auth core, mailer, and API handler tests
@@ -98,7 +104,7 @@ The Resend API key must be supplied through the `RESEND_API_KEY` environment var
 ```javascript
 import { Resend } from 'resend';
 const resend = new Resend(process.env.RESEND_API_KEY);
-await resend.emails.send({ from: FROM_EMAIL, to: APPROVER_EMAIL, subject: '…', html: '…' });
+await resend.emails.send({ from: FROM_EMAIL, to: requesterEmail, subject: '…', html: '…' });
 ```
 
 **Resend setup:**
@@ -106,8 +112,9 @@ No API key is committed to the repository. To enable OTP delivery:
 1. Sign in at https://resend.com and create a key under **API Keys**.
 2. Set `RESEND_API_KEY` in your environment or Vercel settings.
 3. For a quick test sender, you can use `FROM_EMAIL=Spicy Link Generator <onboarding@resend.dev>`
-   (delivers to your Resend account email). For other domains, verify your domain under
-   **Domains → Add domain** and set `FROM_EMAIL` to `login@bcflights.com`.
+   (delivers only to your Resend account email). Sign-in codes now go to **arbitrary
+   @bcflights.com / @travelbusinessclass.com addresses**, so production needs a verified
+   domain: **Domains → Add domain**, then set `FROM_EMAIL` to `login@bcflights.com`.
 
 **Deploy:**
 1. Push this folder to GitHub.
@@ -116,8 +123,7 @@ No API key is committed to the repository. To enable OTP delivery:
 4. **Settings → Environment Variables** (all optional — working defaults are built-in):
    - `AUTH_SECRET`     ← **recommended** (`openssl rand -hex 32`)
    - `RESEND_API_KEY`  ← required for OTP delivery
-   - `FROM_EMAIL`      ← optional, sender email (defaults to `onboarding@resend.dev`)
-   - `APPROVER_EMAIL`  (default `adhambadraan@gmail.com`)
+   - `FROM_EMAIL`      ← **set this on a verified domain** (defaults to `onboarding@resend.dev`)
    - `ALLOWED_DOMAINS` (comma-separated, default `bcflights.com,travelbusinessclass.com`;
      the legacy single-value `ALLOWED_DOMAIN` still works)
 5. Click **Deploy**. Every future `git push` redeploys automatically.
@@ -139,17 +145,21 @@ https://YOUR-SITE.vercel.app/api/health
 > can't reach `/api/*` — almost always because the page is open as a local file,
 > on a static host, or in a sandboxed preview. Test on the Vercel URL instead.
 
-## 3 · Change the approver / domains
+## 3 · Change the allowed domains
 
-Edit `.env.example` (or the defaults in `lib/core.js`) — the approver email and allowed
-domains (`ALLOWED_DOMAINS=one.com,two.com`) are fully configurable per environment, no code changes needed.
+Edit `.env.example` (or the defaults in `lib/core.js`) — the allowed domains
+(`ALLOWED_DOMAINS=one.com,two.com`) are fully configurable per environment, no code changes
+needed. The sign-in code is always sent to whoever requested it, so there is no recipient
+address to configure.
 
 ## 4 · Security notes
 
+- ⚠️ The only thing standing between a stranger and the app is the allowed-domain list, so
+  keep `ALLOWED_DOMAINS` tight and keep `AUTH_SECRET` private.
 - ⚠️ **This repo is public.** Never commit `RESEND_API_KEY` or `AUTH_SECRET`. Any Resend key
   that was previously present in the repository should be revoked and replaced in Vercel →
   Settings → Environment Variables. Anyone who knows the fallback `AUTH_SECRET` can forge a
-  session cookie and skip the approval step, so set a real `AUTH_SECRET` before deploying.
+  session cookie and skip the code entirely, so set a real `AUTH_SECRET` before deploying.
 - Keep both secrets private; never commit `.env` (it is git-ignored).
 - The API endpoints send `Cache-Control: no-store` (see `vercel.json`).
 - Consider rate-limiting the login endpoint behind a firewall rule if you expect

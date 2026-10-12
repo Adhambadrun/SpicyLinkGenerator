@@ -4,7 +4,7 @@ import {
   DEFAULT_FROM_EMAIL,
   mailConfig,
   missingMailConfig,
-  sendApprovalEmail,
+  sendLoginCodeEmail,
 } from '../lib/mailer.js';
 
 test('mailConfig trims environment values and requires a key', () => {
@@ -27,8 +27,8 @@ test('missing mail credentials are reported without importing or calling Resend'
   assert.match(missingMailConfig({ apiKey: '', fromEmail: DEFAULT_FROM_EMAIL }), /RESEND_API_KEY/);
   assert.match(missingMailConfig({ apiKey: 're_test', fromEmail: '' }), /FROM_EMAIL/);
 
-  const out = await sendApprovalEmail({
-    to: 'approver@example.com',
+  const out = await sendLoginCodeEmail({
+    to: 'person@bcflights.com',
     requester: 'person@bcflights.com',
     name: 'Person',
     code: '123456',
@@ -39,8 +39,8 @@ test('missing mail credentials are reported without importing or calling Resend'
   assert.match(out.error, /RESEND_API_KEY/);
 });
 
-test('an empty approver list is rejected before trying to send', async () => {
-  const out = await sendApprovalEmail({
+test('an email with no recipient is rejected before trying to send', async () => {
+  const out = await sendLoginCodeEmail({
     to: '',
     requester: 'person@bcflights.com',
     name: 'Person',
@@ -49,12 +49,12 @@ test('an empty approver list is rejected before trying to send', async () => {
     fromEmail: DEFAULT_FROM_EMAIL,
   });
   assert.equal(out.ok, false);
-  assert.match(out.error, /APPROVER_EMAIL/);
+  assert.match(out.error, /no recipient address/);
 });
 
-test('a successful provider response is accepted and the approval email is escaped', async () => {
+test('a successful provider response is accepted and the sign-in email is escaped', async () => {
   let payload;
-  const out = await sendApprovalEmail({
+  const out = await sendLoginCodeEmail({
     to: 'first@example.com, second@example.com',
     requester: 'person@bcflights.com',
     name: '<Person>',
