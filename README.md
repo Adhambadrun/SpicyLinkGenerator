@@ -1,9 +1,39 @@
 # Spicy Link Generator
 
-A single-page tool that turns a GDS (Sabre/Amadeus) itinerary into booking-ready links and
-BookWithMatrix-valid JSON — fronted by a **real two-factor sign-in** gate.
+A single-page tool that parses GDS-style itineraries or supported Matrix-style JSON, builds
+experimental search handoffs and illustrative JSON, and has a two-step sign-in gate.
+Generated prices and fare codes are not verified or booking-ready.
 
 Made by Adham Badran
+
+## Airline handoff research status
+
+The app accepts supported Sabre/Amadeus-style GDS text **or** Matrix-style JSON
+(`itinerary.slices[].segments[]` with full ISO timestamps, airport codes and booking classes).
+Imported JSON is preserved when copied. Raw GDS text does **not** contain enough data to
+construct a real priced offer: its exported fare basis, taxes, fare construction and price are
+synthetic illustrations, **not** a live quote or a verified BookWithMatrix booking. Outbound
+links are experimental search handoffs; no airline payment or passenger prefill is promised.
+The quote-age input shows the age of a user-supplied quote time. It does not query live inventory
+or assume a universal link TTL. Reprice directly with an authorized provider before booking.
+The airline directory lists 66 candidate public homepages for marketing carriers found in the
+itinerary. They are **not live-checked** in this sandbox. A single-carrier itinerary selects
+its airline automatically; a mixed-carrier itinerary shows an accessible airline dropdown
+(with locally bundled logos where available, IATA monograms otherwise). **Generate and Copy
+use the same selected airline and URL**. Mixed carriers fall back to the selected airline's
+homepage rather than inventing a joint cart. Unknown carriers get no URL.
+
+For AA-only itineraries, Generate uses the historical metasearch exact-flight attempt,
+unchanged; GDS departure timestamps use DST-aware airport timezones where mapped, and imported
+JSON uses its explicit offset. Delta and United direct one-way/round-trip itineraries have
+*unverified search prefills* (not flight selection or checkout). All other carriers use their
+own directory homepage. No fabricated price or passenger details are passed to these sites.
+Airline marks are used for identification only; see
+[asset attribution](assets/airline-logos/ATTRIBUTION.md). See
+[AA_ACCEPTANCE.md](AA_ACCEPTANCE.md) for the live passenger-form + fare-match test.
+No direct-checkout capability is claimed until that test passes in a real browser.
+See [IMPLEMENTATION_BRIEF.md](IMPLEMENTATION_BRIEF.md) for the evidence-first implementation
+plan and limitations of prior unverified airline/Google Flights claims.
 
 ---
 
