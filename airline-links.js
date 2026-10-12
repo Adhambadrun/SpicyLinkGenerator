@@ -67,7 +67,7 @@ function baSliceIndex(segs) {
 // user — is still computed in one place, and so the legacy builder keeps refusing any
 // multi-city shape.
 const BA_MAX_SLICES=2;
-const BA_HANDOFF_BLOCKED='BA offer-search handoff is unusable: real-browser runs on 2026-10-12 hung forever on BA\u2019s \u201cGive us a moment, we\u2019re calculating your price\u201d page for both the one-way and the round-trip link (AA_ACCEPTANCE.md).';
+const BA_HANDOFF_BLOCKED='BA offer-search handoff is unusable: real-browser runs on 2026-10-12 hung forever on BA’s “Give us a moment, we’re calculating your price” page for both the one-way and the round-trip link (AA_ACCEPTANCE.md).';
 function baOndJourneys(segments) {
   const idx=baSliceIndex(segments);
   const journeys=[];let cur=-1;
@@ -141,7 +141,7 @@ export function resolveAirlineLink(segments, selectedCarrier, passengers, {build
   const options=itineraryAirlines(segments);
   const option=options.find(o=>o.carrier===selectedCarrier);
   if (!option) return {url:null,kind:'unsupported',label:'No airline selected',note:'Choose a carrier in this itinerary.'};
-  if (!option.url) return {url:null,kind:'unsupported',label:`${option.name} \u00b7 no link`,note:'No airline website is listed. Search manually.'};
+  if (!option.url) return {url:null,kind:'unsupported',label:`${option.name} · no link`,note:'No airline website is listed. Search manually.'};
   const fallback=(reason)=>({url:option.url,kind:'homepage',label:`Visit ${option.name} website`,
     note:`${reason} This opens a homepage, not a selected flight or live fare.`});
   if (selectedCarrier==='AA') {
