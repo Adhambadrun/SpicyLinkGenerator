@@ -147,8 +147,8 @@
   <div class="row">
     <button class="btn g" id="generate-link" onclick="openSelectedLink()" disabled>Generate airline link</button>
     <button class="btn y" id="copy-link" onclick="copyLink()" disabled>Copy same link</button>
-    <button class="btn b" id="alternative-search" onclick="openAlternativeSearch()" hidden>Pre-filled Google Flights search (not BA)</button>
   </div>
+  <div class="row" id="alternative-searches" role="group" aria-label="Google Flights third-party searches" hidden></div>
 </div>
 
 <div class="card first">
@@ -181,7 +181,7 @@
 <script type="module">
 import { parseMatrixInput } from "/booking-tools.js";
 import { airlineOption, itineraryAirlines } from "/airline-directory.js";
-import { resolveAirlineLink, ondSlices } from "/airline-links.js";
+import { resolveAirlineLink, ondSlicesWithCabin, gfSearchGroups } from "/airline-links.js";
 import { airportLocalTimeMs } from "/aa-handoff.js";
 /* ================= knowledge bases ================= */
 const MONTHS={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
@@ -542,7 +542,19 @@ function unitedUrl(segs){const s0=segs[0];const tt=tripType(segs)==='roundTrip'?
   if(tt===2)u+='&r='+enc(segs[1].ymd);return u;}
 function deltaUrl(segs){const s0=segs[0];let u='https://www.delta.com/flight-search/book-a-flight?tripType='+(tripType(segs)==='oneWay'?'ONE_WAY':'ROUND_TRIP')+'&originCity='+enc(s0.origin)+'&destinationCity='+enc(s0.dest)+'&departureDate='+enc(s0.ymd)+'&paxCount='+paxTotal();
   if(tripType(segs)==='roundTrip')u+='&returnDate='+enc(segs[1].ymd);return u;}
-function gfUrl(segs){
+function gfCabinValue(cabin){
+  const value=String(cabin||'COACH').trim().toUpperCase().replace(/[ _]+/g,'-');
+  if(value==='FIRST'||value==='F')return 4;
+  if(value==='BUSINESS'||value==='C'||value==='J')return 3;
+  if(value==='PREMIUM-COACH'||value==='PREMIUM-ECONOMY'||value==='W')return 2;
+  return 1;
+}
+function gfTripTypeValue(segs){
+  if(segs.length===1)return 2; // one-way
+  if(segs.length===2&&segs[0].origin===segs[1].dest&&segs[0].dest===segs[1].origin)return 1; // round-trip
+  return 3; // multi-city
+}
+function gfUrl(segs,cabin){
   function vi(n){const o=[];while(true){const b=n&0x7f;n>>>=7;if(n)o.push(b|0x80);else{o.push(b);break;}}return o;}
   function fl(num,p){return vi(num<<3|2).concat(vi(p.length),p);}
   function fv(num,v){return vi(num<<3|0).concat(vi(v));}
@@ -550,7 +562,7 @@ function gfUrl(segs){
   let b=fv(1,28).concat(fv(2,2));
   segs.forEach(s=>{const sb=fl(2,encT(s.ymd)).concat(fl(13,fv(1,1).concat(fl(2,encT(s.origin))))).concat(fl(14,fv(1,1).concat(fl(2,encT(s.dest)))));
     b=b.concat(fl(3,sb));});
-  b=b.concat(fv(8,1),fv(9,1),fv(14,1),[0x82,0x01,0x0b,0x08,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x01],fv(19,3));
+  b=b.concat(fv(8,1),fv(9,gfCabinValue(cabin)),fv(14,1),[0x82,0x01,0x0b,0x08,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x01],fv(19,gfTripTypeValue(segs)));
   const b64=btoa(String.fromCharCode.apply(null,b)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   return 'https://www.google.com/travel/flights/search?tfs='+b64+'&hl=en&curr=USD';
 }
@@ -668,23 +680,26 @@ async function copyLink(){
   catch(e){toast('Could not copy link — check browser clipboard permissions');}
 }
 /* BA has no pre-filled handoff (AA_ACCEPTANCE.md, 2026-10-12), so next to BA's own EMPTY
-   search form the app offers a clearly labeled third-party search that IS pre-filled with
-   the same itinerary. It is built from the collapsed O&D slices (ondSlices), so a
-   connection stays one row instead of becoming two one-way searches, and it is never
-   presented as an airline booking or a fare. */
-function alternativeSearchUrl(){
-  const slices=ondSlices(lastSegs);
-  return slices.length?gfUrl(slices):null;
+   search form the app offers clearly labeled third-party searches. O&D connections stay
+   collapsed to one row, and each Google Flights URL is constrained to one cabin; a mixed-
+   cabin slice is offered separately under each cabin present on its component legs. */
+function cabinLabel(cabin){
+  return cabin==='FIRST'?'First':cabin==='BUSINESS'?'Business':cabin==='PREMIUM-COACH'?'Premium economy':'Economy';
 }
-async function openAlternativeSearch(){
+function alternativeSearchGroups(){
+  return gfSearchGroups(ondSlicesWithCabin(lastSegs));
+}
+async function openAlternativeSearch(cabin){
   ensureCurrentInput();
-  const url=alternativeSearchUrl();
-  if(!url){toast('No parsed itinerary to search yet');return;}
+  const group=alternativeSearchGroups().find(g=>g.cabin===cabin);
+  if(!group){toast('No matching cabin search is available');return;}
+  const url=gfUrl(group.slices,group.cabin);
   const copied=copyText(url).then(()=>true,()=>false);
   window.open(url,'_blank','noopener,noreferrer');
   const didCopy=await copied;
-  toast(didCopy?'Google Flights search opened and copied — third-party search, NOT a BA booking or fare':
-    'Google Flights search opened — third-party search, NOT a BA booking or fare');
+  const label=cabinLabel(group.cabin);
+  toast(didCopy?`Google Flights ${label} search opened and copied — third-party search, NOT a BA booking or fare`:
+    `Google Flights ${label} search opened — third-party search, NOT a BA booking or fare`);
 }
 function makeAirlineIdentity(option){
   const identity=document.createElement('span');identity.className='airline-identity';
@@ -703,7 +718,7 @@ function selectCarrier(code){selectedCarrier=code;renderDestination();}
 function renderDestination(){
   const picker=document.getElementById('airline-picker'),note=document.getElementById('link-note');
   const generateBtn=document.getElementById('generate-link'),copyBtn=document.getElementById('copy-link');
-  const altBtn=document.getElementById('alternative-search');
+  const alternatives=document.getElementById('alternative-searches');
   if(!picker||!note||!generateBtn||!copyBtn)return;
   const options=itineraryAirlines(lastSegs);
   if(!options.some(o=>o.carrier===selectedCarrier))selectedCarrier=options[0]?.carrier||'';
@@ -711,7 +726,7 @@ function renderDestination(){
   if(!options.length){
     selectedCarrier='';note.textContent='Paste an itinerary to see its airlines.';
     note.dataset.kind='unsupported';generateBtn.disabled=true;copyBtn.disabled=true;
-    if(altBtn){altBtn.hidden=true;altBtn.disabled=true;}
+    if(alternatives){alternatives.hidden=true;alternatives.replaceChildren();}
     generateBtn.textContent='Generate airline link';return;
   }
   const selected=options.find(o=>o.carrier===selectedCarrier);
@@ -754,13 +769,28 @@ function renderDestination(){
     wrap.appendChild(trigger);wrap.appendChild(menu);picker.appendChild(wrap);
   }
   const result=selectedLinkFor(lastSegs,selectedCarrier);
-  note.textContent=(options.length>1?'Multiple marketing airlines detected. Choose who to visit. ':'')+result.note+
-    (result.manualEntry?' Alternative: the button below opens a pre-filled Google Flights search for the same O&D slices — a third-party search, NOT a BA booking and not a BA fare.':'');
+  const alternativeGroups=result.manualEntry?alternativeSearchGroups():[];
+  const alternativeNote=alternativeGroups.length
+    ?' Alternative: the buttons below open one pre-filled Google Flights search per cabin, for the matching O&D slices. Mixed-cabin connections are searched separately at each represented cabin, not reproduced leg-for-leg. These are third-party searches, NOT a BA booking or fare.'
+    :'';
+  note.textContent=(options.length>1?'Multiple marketing airlines detected. Choose who to visit. ':'')+result.note+alternativeNote;
   note.dataset.kind=result.kind;
   generateBtn.textContent=result.label;generateBtn.disabled=!result.url;copyBtn.disabled=!result.url;
-  if(altBtn){
-    const offer=!!result.manualEntry&&!!alternativeSearchUrl();
-    altBtn.hidden=!offer;altBtn.disabled=!offer;
+  if(alternatives){
+    alternatives.replaceChildren();
+    const offer=!!result.manualEntry&&alternativeGroups.length>0;
+    alternatives.hidden=!offer;
+    if(offer){
+      for(const group of alternativeGroups){
+        const button=document.createElement('button');
+        button.type='button';button.className='btn b';button.dataset.cabin=group.cabin;
+        const label=cabinLabel(group.cabin);
+        button.textContent=`Pre-filled Google Flights · ${label} (not BA)`;
+        button.setAttribute('aria-label',`Open pre-filled ${label} Google Flights search, a third-party search (not BA)`);
+        button.addEventListener('click',()=>openAlternativeSearch(group.cabin));
+        alternatives.appendChild(button);
+      }
+    }
   }
 }
 async function copyText(text){

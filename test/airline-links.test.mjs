@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBAProcessOfferUrl, ondSlices, resolveAirlineLink } from '../airline-links.js';
+import { buildBAProcessOfferUrl, gfSearchGroups, ondSlices, ondSlicesWithCabin, resolveAirlineLink } from '../airline-links.js';
 import { buildAAMetasearchUrl } from '../aa-handoff.js';
 
 const BA_SEARCH_FORM='https://www.britishairways.com/travel/book/public/en_gb/flightSearch';
@@ -178,4 +178,29 @@ test('ondSlices collapses connections so the third-party alternative is never a 
   assert.deepEqual(ondSlices([]),[]);
   assert.deepEqual(ondSlices([{origin:'cdg',dest:'LHR',ymd:'2026-10-30'}]),[]);
   assert.deepEqual(ondSlices([{origin:'CDG',dest:'LHR',ymd:'30OCT'}]),[]);
+});
+
+test('cabin-annotated O&D slices produce separate Google Flights searches per cabin', () => {
+  const mixedConnection=[
+    {...leg('BA','CDG','LHR','2026-10-30'),cls:'J'},
+    {...leg('AA','LHR','JFK','2026-10-30'),cls:'O'},
+    {...leg('AA','JFK','CDG','2026-11-06'),cls:'O'},
+  ];
+  const slices=ondSlicesWithCabin(mixedConnection);
+  assert.deepEqual(slices,[
+    {origin:'CDG',dest:'JFK',ymd:'2026-10-30',cabin:'BUSINESS'},
+    {origin:'CDG',dest:'JFK',ymd:'2026-10-30',cabin:'COACH'},
+    {origin:'JFK',dest:'CDG',ymd:'2026-11-06',cabin:'COACH'},
+  ]);
+  const expected=[
+    {cabin:'BUSINESS',slices:[{origin:'CDG',dest:'JFK',ymd:'2026-10-30'}]},
+    {cabin:'COACH',slices:[
+      {origin:'CDG',dest:'JFK',ymd:'2026-10-30'},
+      {origin:'JFK',dest:'CDG',ymd:'2026-11-06'},
+    ]},
+  ];
+  assert.deepEqual(gfSearchGroups(slices),expected);
+  assert.deepEqual(gfSearchGroups(mixedConnection),expected,'raw segments may be grouped directly too');
+  assert.deepEqual(ondSlicesWithCabin([]),[]);
+  assert.deepEqual(gfSearchGroups([]),[]);
 });
