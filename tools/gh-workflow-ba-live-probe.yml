@@ -15,7 +15,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,11 +25,21 @@ jobs:
         run: |
           npm install --no-save --no-package-lock playwright@1.49.1
           npx playwright install --with-deps chromium || true
-      - name: Run probe
+      # Two passes so one long-running interstitial run cannot starve the fast form pages:
+      # pass 1 measures the pages that render immediately (short wait), pass 2 gives the
+      # processOffer interstitials the full --seconds to resolve. Separate report files, so
+      # the second pass never overwrites the first.
+      - name: Run probe (forms, capture + replay, candidates, matrix)
         run: |
           mkdir -p artifacts
           xvfb-run --auto-servernum --server-args="-screen 0 1440x900x24" \
-            node tools/ba-live-probe.mjs --capture --matrix --legacy --seconds=150
+            node tools/ba-live-probe.mjs --capture --replay --candidates --matrix --seconds=60 \
+              --markdown --report=ba-live-probe-pass1.json
+      - name: Run probe (recorded-BLOCKED processOffer handoff, long wait)
+        run: |
+          mkdir -p artifacts
+          xvfb-run --auto-servernum --server-args="-screen 0 1440x900x24" \
+            node tools/ba-live-probe.mjs --legacy --seconds=150 --markdown --report=ba-live-probe-pass2.json
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
