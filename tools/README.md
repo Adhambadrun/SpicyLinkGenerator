@@ -1,8 +1,8 @@
 # tools/ — live handoff probe
 
-`ba-live-probe.mjs` drives a **real desktop browser** through the links the app's
-*Open BA offer search* / *Open AA metasearch link* buttons emit, and records where each one
-lands. It exists because the 2026-10-12 HTTP-only probes could not answer the one question that
+`ba-live-probe.mjs` drives a **real desktop browser** through the handoff links themselves
+(BA's historical offer-search output, which the app no longer offers, and the AA metasearch
+link) and records where each one lands. It exists because the 2026-10-12 HTTP-only probes could not answer the one question that
 decides BA's fate: ba.com's `/processOffer` page is a client-side
 *"Give us a moment, we're calculating your price"* interstitial that answers **every** input
 (valid, multi-city, even an invalid airport) with byte-identical HTML, so the real landing page

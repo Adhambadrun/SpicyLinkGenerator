@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Real-browser probe for the airline handoffs described in AA_ACCEPTANCE.md.
 //
-// It reproduces exactly what the app's "Open BA offer search" / "Open AA metasearch link"
-// buttons open, but drives a real desktop browser so the JavaScript on ba.com/aa.com runs.
+// It opens the handoff URLs themselves (BA's historical offer-search output and the AA
+// metasearch link) in a real desktop browser so the JavaScript on ba.com/aa.com runs.
+// BA's button is gone from the app since the handoff was recorded BLOCKED (AA_ACCEPTANCE.md);
+// these cases are kept so any future BA change can be re-measured with one command.
 // This is the missing half of the HTTP-only probes: those only ever saw the
 // "Give us a moment, we're calculating your price" interstitial, which is byte-identical
 // for valid, multi-city and even invalid input and therefore proves nothing.
