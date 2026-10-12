@@ -110,15 +110,16 @@ await resend.emails.send({ from: FROM_EMAIL, to: requesterEmail, subject: '…',
 **Resend setup:**
 No API key is committed to the repository. To enable OTP delivery:
 1. Sign in at https://resend.com and create a key under **API Keys**.
-2. **Verify the sending domain** at https://resend.com/domains → **Add domain**
-   (`bcflights.com`, or a subdomain such as `send.bcflights.com`) and add the DNS records
-   it shows. This step is **mandatory**: sign-in codes go to real users, and Resend refuses
-   to email them from an unverified domain.
-3. Set `RESEND_API_KEY` in your environment or Vercel settings.
-4. Set `FROM_EMAIL` to an address on that verified domain, e.g.
-   `Spicy Link Generator <login@bcflights.com>`. If `FROM_EMAIL` is left empty the app
-   sends from the first `ALLOWED_DOMAINS` entry instead — never from the sandbox address
-   below, which cannot send to your users.
+2. Set `RESEND_API_KEY` in your environment or Vercel settings.
+3. Leave `FROM_EMAIL` unset to send from Resend's shared address
+   `Spicy Link Generator <onboarding@resend.dev>` (the default). The sender is never
+   derived from `ALLOWED_DOMAINS` — those only decide who may sign in.
+4. *Optional — to send from your own address:* verify a domain at
+   https://resend.com/domains → **Add domain** (`bcflights.com`, or a subdomain such as
+   `send.bcflights.com`), add the DNS records it shows, then set `FROM_EMAIL` to an address
+   on it, e.g. `Spicy Link Generator <login@bcflights.com>`. Resend only lets
+   `onboarding@resend.dev` deliver to the address your Resend account is registered to, so
+   this step is what unlocks delivery to everyone else.
 
 **Deploy:**
 1. Push this folder to GitHub.
@@ -127,8 +128,8 @@ No API key is committed to the repository. To enable OTP delivery:
 4. **Settings → Environment Variables** (all optional — working defaults are built-in):
    - `AUTH_SECRET`     ← **recommended** (`openssl rand -hex 32`)
    - `RESEND_API_KEY`  ← required for OTP delivery
-   - `FROM_EMAIL`      ← **set this on a verified domain** (when unset it defaults to
-     `login@<first ALLOWED_DOMAINS entry>`, never to the resend.dev sandbox address)
+   - `FROM_EMAIL`      ← defaults to `Spicy Link Generator <onboarding@resend.dev>`; set it
+     to an address on a domain you verified in Resend to send from your own domain
    - `ALLOWED_DOMAINS` (comma-separated, default `bcflights.com,travelbusinessclass.com`;
      the legacy single-value `ALLOWED_DOMAIN` still works)
 5. Click **Deploy**. Every future `git push` redeploys automatically.
@@ -154,9 +155,10 @@ https://YOUR-SITE.vercel.app/api/health
 
 ### ⚙ "You can only send testing emails to your own email address" — the sign-in email fails
 
-That error is Resend's, and it means `FROM_EMAIL` is still Resend's **sandbox sender**
-(`onboarding@resend.dev`). The sandbox address may only email the address your Resend
-account is registered to, so a code for a real user is always rejected. Fix it in order:
+That error is Resend's. The sign-in email is sent from Resend's shared sender
+(`onboarding@resend.dev`, the default), and Resend only lets that address email the address
+your Resend account is registered to — any other recipient is rejected by Resend itself.
+To deliver to everyone, send from your own domain instead:
 
 1. **Verify a sending domain** — https://resend.com/domains → **Add domain**
    (`bcflights.com`, or a subdomain such as `send.bcflights.com`), add the SPF/DKIM DNS
