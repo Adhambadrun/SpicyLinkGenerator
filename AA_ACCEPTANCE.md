@@ -230,7 +230,12 @@ pre-#21 build at the time of the runs above; test C therefore exercised the pre-
 (BA emitting the 3-slice URL), which is the case that motivated the gate. The probe and the
 shape-gate code are in the repository regardless of deploy health; verify
 `https://<deployment>/airline-links.js` matches the merged commit before recording a new
-browser result. The 2026-10-12 **rendering probes** in the BA table above were made directly
+browser result. **Update (2026-10-12, after PR #25):** the Vercel production deployment of the
+merge commit `e8afb43` **succeeded** (commit state `success`, deployment
+`7010092136`, `https://spicylinkgenerator-hkuxumdi2-mr-spicy.vercel.app`), and a fetch of
+`https://spicylinkgenerator.vercel.app/airline-links.js` returns the new module — it contains
+`BA_SEARCH_FORM_URL` and `assertNotBlockedBaHandoff` — so production serves the code the BA
+evidence table describes. The 2026-10-12 **rendering probes** in the BA table above were made directly
 against `www.britishairways.com`, not against a deployment, so they are unaffected by Vercel
 build status; only the owner's in-app clicks depend on which build production serves.
 
