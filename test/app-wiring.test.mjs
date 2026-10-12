@@ -37,7 +37,7 @@ function historicalAAUrl(carriers) {
     '0','0','0','0','0','0','0','0.00','1',legs,flights];
   return 'https://www.aa.com/goto/metasearch?ITEN='+encodeURIComponent(parts.join(','));
 }
-async function app() {
+async function app({nowIso='2026-10-12T12:00:00Z'}={}) {
   const html=await readFile(new URL('../app.html',import.meta.url),'utf8');
   const match=html.match(/<script type="module">([\s\S]*?)<\/script>/);
   assert.ok(match,'app logic must be a module so its imports actually run');
@@ -51,10 +51,14 @@ async function app() {
     createElement:mockElement,body:{appendChild(){}},querySelector:()=>mockElement()};
   const opened=[],copied=[];
   const window={open:(url)=>opened.push(url),addEventListener(){}};
+  class FixedDate extends Date {
+    constructor(...args){super(...(args.length?args:[nowIso]));}
+    static now(){return new Date(nowIso).getTime();}
+  }
   const context=vm.createContext({document,window,parseMatrixInput,airlineOption,itineraryAirlines,
     resolveAirlineLink,navigator:{clipboard:{writeText:async text=>copied.push(text)}},
     localStorage:{getItem:()=> '1',setItem(){}},setInterval(){},setTimeout(){},
-    TextEncoder,Date,URL,console});
+    TextEncoder,Date:FixedDate,URL,console});
   vm.runInContext(script,context,{filename:'app.html'});
   return {elements,document,window,opened,copied};
 }
@@ -99,4 +103,59 @@ test('mixed itinerary: selecting AA generates and copies the original URL with e
   assert.equal(new URL(opened[1]).hostname,'www.delta.com');
   assert.equal(new URL(opened[1]).pathname,'/');
   assert.match(elements.get('link-note').textContent,/Multiple marketing/);
+});
+
+test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, wires BA processOffer search, and preserves all 6 legs for AA', async () => {
+  const gds=[
+    '1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E',
+    '2 AA 731I 30OCT F LHRCLT*SS1   955A  250P /DCAA /E',
+    '3 AA2615I 30OCT F CLTMSY*SS1   453P  600P /DCAA /E',
+    '4 AA1917I 31OCT J MIASTI SS1  1205P  215P /DCAA /E',
+    '5 AA1770O 21JAN Q STIMIA*SS1   720A  846A /DCAA /E',
+    '6 AA 112O 21JAN Q MIABCN*SS1   415P  705A  22JAN F /DCAA /E',
+  ].join('\n');
+  const expectedBA='https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-MSY_2026-10-30,MIA-STI_2026-10-31,STI-BCN_2027-01-21&ad=1&yad=0&ch=0&inf=0&cabin=C&flex=LOWEST&ond=3';
+
+  for (const nowIso of ['2026-10-12T12:00:00Z', '2026-01-10T12:00:00Z']) {
+    const {elements,window,opened,copied}=await app({nowIso});
+    elements.get('gds').value=gds;
+    // Leg 1 is BA, so BA is selected initially and resolves to the legacy BA processOffer URL.
+    await window.openSelectedLink();
+    await window.copyLink();
+    assert.equal(elements.get('warn').textContent,'');
+    const outText=elements.get('out').textContent;
+    assert.match(outText,/PARSED 6 SEGMENTS · 1 adult/);
+    const segmentLines=outText.split('\n').filter(line=>line.startsWith('  '));
+    assert.deepEqual(segmentLines,[
+      '  BA323     J BUSINESS         CDG->LHR  2026-10-30  07:05 -> 07:35',
+      '  AA731     I BUSINESS         LHR->CLT  2026-10-30  09:55 -> 14:50  MARRIED',
+      '  AA2615    I BUSINESS         CLT->MSY  2026-10-30  16:53 -> 18:00  MARRIED',
+      '  AA1917    I BUSINESS         MIA->STI  2026-10-31  12:05 -> 14:15',
+      '  AA1770    O ECONOMY          STI->MIA  2027-01-21  07:20 -> 08:46  MARRIED',
+      '  AA112     O ECONOMY          MIA->BCN  2027-01-21  16:15 -> 07:05 (+1)  MARRIED',
+    ]);
+
+    assert.equal(opened[0],expectedBA);
+    assert.equal(copied[0],expectedBA);
+    assert.equal(elements.get('generate-link').textContent,'Open BA offer search');
+    assert.match(elements.get('link-note').textContent,/NOT preselected/);
+
+    // Switch dropdown from BA (option 0) to AA (option 1).
+    const menu=elements.get('airline-picker').children[0].children[1];
+    assert.equal(menu.children.length,2);
+    menu.children[1].events.click();
+    assert.equal(elements.get('generate-link').textContent,'Open AA metasearch link');
+
+    await window.openSelectedLink();
+    await window.copyLink();
+    const aaUrl=opened[1];
+    assert.equal(copied[1],aaUrl);
+    assert.equal(copied[2],aaUrl);
+    assert.equal(new URL(aaUrl).origin,'https://www.aa.com');
+    assert.equal(new URL(aaUrl).pathname,'/goto/metasearch');
+    assert.doesNotMatch(aaUrl,/search-journey-id|cid=|passenger-ui/i);
+    const iten=new URL(aaUrl).searchParams.get('ITEN');
+    assert.match(iten,/^DIRECT,0,US,multi,4,A1S0C0I0Y0L0,0,CDG,0,LHR,/);
+    assert.match(iten,/#BA\|323\|J\|CDG\|LHR\|1793340300000\|0#AA\|731\|I\|LHR\|CLT\|1793354100000\|1#AA\|2615\|I\|CLT\|MSY\|1793397180000\|2#AA\|1917\|I\|MIA\|STI\|1793466300000\|3#AA\|1770\|O\|STI\|MIA\|1800516000000\|4#AA\|112\|O\|MIA\|BCN\|1800566100000\|5$/);
+  }
 });
