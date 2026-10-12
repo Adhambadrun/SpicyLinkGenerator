@@ -177,19 +177,40 @@ renders instantly, no spinner, no geo-redirect to an empty widget):
 
 1. Whether BA's form, **filled by hand and submitted**, reaches flight results. Rows 1–4
    prove the form renders and ignores parameters; they do not exercise the Search button.
+   `--capture` now does that (`F`/`G`/`H`), and `--capture --replay` additionally answers
+   whether the URL BA hands back still works **cold**, in a brand-new context.
 2. The **two-step session hypothesis** (homepage → accept cookies → `processOffer` in the
    same tab). Untested here; `tools/ba-live-probe.mjs --matrix` runs it as case `M3`.
 3. The **capture flow's selectors** (`--capture`): BA's ba-sell app publishes no selectors,
    so the tool tries labelled/placeholder/role strategies per field and records which one
-   worked. Until an owner run records `CAPTURED_BA_SEARCH_URL`, treat the selectors as
-   **unverified**; a form it could not fill is reported as `CAPTURE_FAILED_FORM_NOT_FILLED`,
-   never as a result.
+   worked, then reads the values back out of the DOM before reporting them
+   (`formReadBack`, `readBackWarning`). Until an owner run records
+   `CAPTURED_BA_SEARCH_URL`, treat the selectors as **unverified**; a form it could not fill
+   is reported as `CAPTURE_FAILED_FORM_NOT_FILLED`, never as a result.
 4. The **passenger-form + fare-match benchmark** above. BA has never reached step 3, so BA
    stays `SEARCH_ONLY`, never `PASS_PASSENGER_FORM_MATCHED_FARE`.
 5. Google Flights landing/results for the single alternative URL. The TFS fields above are built
    and pinned by unit tests, but this sandbox has not observed those generated URLs in a real
    browser; they remain third-party `search_unverified` alternatives, with no fare claimed.
    Test success is not a substitute for browser evidence.
+
+**Sandbox re-check (2026-10-12, second session, same day).** Nothing below is new BA evidence;
+it re-confirms the limits above and closes out the tooling questions they left open.
+`curl https://www.britishairways.com/travel/book/public/en_gb/flightSearch` still fails with
+`SSL_ERROR_SYSCALL` (exit 35), `registry.npmjs.org` still answers `200`, and the box has **no**
+Chrome/Chromium binary and no Playwright browser cache — so no real-browser run was possible in
+this session either, and every BA outcome above stands unchanged. Both Actions-install paths were
+retried and both are still refused with the identical errors: `git push` of
+`.github/workflows/ba-live-probe.yml` →
+`refusing to allow a GitHub App to create or update workflow … without 'workflows' permission`,
+and `gh api -X PUT repos/Adhambadrun/SpicyLinkGenerator/contents/.github/workflows/ba-live-probe.yml`
+→ `403 Resource not accessible by integration`. `gh workflow list` returns nothing at all, i.e.
+the repository has **no** workflow installed to dispatch. What this session *did* change is the
+tooling the owner has to run: `--candidates` (the seven recorded rows, browser-measured with
+network failures), `--capture --replay` / `--replay-stdin` (fresh-incognito replay of a captured
+URL, in memory only), `--markdown` (paste-ready evidence table), and the runbook above. Those are
+verified by `npm test` and `--dry-run` here; the browser verdicts still have to come from a real
+browser.
 
 **Sandbox limitation for this turn (2026-10-12, Africa/Cairo).** Re-verified via the
 agent's page-fetch proxy (rendering fetch, JS executed, no login, no cookies, no PII):
@@ -221,11 +242,83 @@ run reaches BA flight results and passes the passenger-form benchmark, the exist
 
 ```bash
 npm install --no-save --no-package-lock playwright && npx playwright install chromium
-node tools/ba-live-probe.mjs --dry-run --capture --matrix --legacy   # review the case list, no browser
-node tools/ba-live-probe.mjs --headful --capture --seconds=150  # PRIORITY 1: capture BA's own prefill URL
-node tools/ba-live-probe.mjs --headful --matrix --seconds=150  # PRIORITY 2: legacy-entry variant matrix
+node tools/ba-live-probe.mjs --dry-run --capture --candidates --matrix --legacy  # review the case list, no browser
+node tools/ba-live-probe.mjs --headful --capture --replay --seconds=150  # PRIORITY 1: capture BA's own prefill URL, then reopen it cold
+node tools/ba-live-probe.mjs --headful --candidates --seconds=60  # PRIORITY 2: the recorded #1–#7 rows, final page + seconds + network failures
+node tools/ba-live-probe.mjs --headful --matrix --seconds=150  # PRIORITY 2: legacy-entry variant matrix (M3 = two-step session)
 node tools/ba-live-probe.mjs --headful --legacy --seconds=150  # re-measure the BLOCKED handoff
+pbpaste | node tools/ba-live-probe.mjs --headful --replay-stdin  # replay the URL from your own address bar, cold
 ```
+
+`--candidates` and `--replay-stdin` print a **paste-ready evidence table**
+(`# | URL opened (redacted) | Landing observed | Seconds waited | Network failures (status ·
+path only)`) — paste it into the results table below instead of retyping URLs. Network failures
+are recorded the way DevTools → Network shows them, as **status + method + path only**; the query
+string is never copied, so a CDN `403`/`429` or a redirect cannot leak a session id into this
+document. The raw captured URL is never written to disk either: the report keeps its path and
+parameter **names**, and the replay reuses it in memory.
+
+#### Owner runbook — the two open questions, end to end (no new result recorded yet)
+
+Everything below is a *procedure*. Nothing in this section is a result: until a real-browser run
+is pasted into the tables, BA stays `BLOCKED` / `SEARCH_ONLY` and the app keeps opening BA's
+empty search form.
+
+**Priority 1 — does BA have a real prefill format?** (desktop Chrome, **incognito, logged out**)
+
+1. `node tools/ba-live-probe.mjs --headful --capture --replay --seconds=150`, or the manual
+   equivalent: open `…/flightSearch`, accept cookies, fill **Flight 1** `CDG → LHR`,
+   `30/10/2026`, **Business**, `1 adult`, **remove the other two rows**, click **Search**.
+2. Record where it lands (flight results / spinner / error / homepage), the seconds waited, and
+   DevTools → Network failures (`403`/`429`/`5xx`, **path only**).
+3. Record the resulting address-bar URL **redacted**: parameter names only, every value
+   `<redacted>`. The tool prints exactly that (`capturedParamNames`) — never paste a live URL.
+   Doing it by hand in Chrome: keep the origin + path, then for every `name=value` in the query
+   write `name=<redacted>` — the only value worth keeping is `onds` (that is the itinerary you
+   typed). A URL containing `search-journey-id`, `cid`, `sid`, `token` or `session` must be
+   stripped to `<redacted>` before it goes in this file: those are exactly the transient ids
+   that make a capture look reusable when it is not.
+4. **Then reopen that captured URL in a fresh incognito window.** This is the decisive step: a
+   URL that only works with the first tab's cookies/state is a session-bound URL and must not be
+   shipped as a handoff. Verdicts: `REPLAY_FLIGHT_RESULTS_POSSIBLE` (escalate to the passenger-form
+   benchmark), `REPLAY_PROCESSING_INTERSTITIAL`, `REPLAY_PAYMENT_INTERSTITIAL`,
+   `REPLAY_REDIRECTED_HOMEPAGE`, `REPLAY_ERROR_PAGE`, `REPLAY_UNCLASSIFIED`.
+5. Even `REPLAY_FLIGHT_RESULTS_POSSIBLE` is **not** a pass: a human still has to confirm the
+   flights and legs on the screenshot, then run the Definition-of-pass benchmark above.
+
+**Priority 2 — the two-step session and the recorded candidate rows**
+
+1. `M3`: open `https://www.britishairways.com/travel/home/public/en_eg/` → accept cookies →
+   navigate to the same-tab `processOffer?onds=CDG-LHR_…` round-trip URL. Report the final page,
+   seconds waited and Network failures (path only).
+2. `--candidates` re-opens the seven recorded candidate URLs from the table above — one per fresh
+   context, including the `#fragment` variant — and reports per row: final page, seconds waited,
+   network failures, and (for the `flightSearch` rows) whether the rendered form is still empty
+   (`PREFILL_IGNORED_FORM_EMPTY`, the recorded answer) or actually took the values
+   (`PREFILL_APPLIED_FORM_POPULATED`).
+3. Paste the printed markdown table into the block below and delete the `not run` rows.
+
+**Results template — fill in from a real-browser run (currently empty on purpose)**
+
+| # | Candidate | Final page | Seconds waited | Network failures (status · path) | Fresh-incognito replay |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `flightSearch`, no params | not run | — | — | n/a |
+| 2 | `flightSearch` + `onds/ad/yad/ch/inf/cabin/flex/ond` | not run | — | — | n/a |
+| 3a | `flightSearch` + 2-slice `onds` | not run | — | — | n/a |
+| 3b | same payload as `#fragment` | not run | — | — | n/a |
+| 4 | `flightSearch` + `tripType/from/to/departDate/cabinclass/adult` | not run | — | — | n/a |
+| 5 | `en_gb/processOffer?onds=…&ond=1` | not run | — | — | not run |
+| 6 | `en_eg/processOffer?onds=…&ond=1` | not run | — | — | not run |
+| 7 | `/travel/book/public/en_gb?origin=…` | not run | — | — | not run |
+| M3 | two-step: `en_eg` home → cookies → `processOffer` round-trip | not run | — | — | n/a |
+| F | **capture**: fill Flight 1 CDG→LHR 30/10/2026 Business 1 adult, remove other rows, Search | not run | — | — | not run |
+
+**Promotion rule (unchanged, and it is the whole point of this file).** A new BA URL builder and
+a narrowed `assertNotBlockedBaHandoff` may be shipped **only** when a candidate is proven in a
+real browser to reach BA flight results, with the date, method and redacted URL recorded in this
+document. Building a URL, or a unit test pinning it, is not evidence. Until then the app keeps
+opening BA's empty search form with the itinerary to type, plus the single Google Flights
+alternative.
 
 Each case gets a fresh context (no cookie reuse), never logs in, never enters passenger
 data, and redacts every URL except origin, path and the documented search parameters — so

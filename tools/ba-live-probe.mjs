@@ -16,11 +16,22 @@
 //      format, this is how we find out what it is. The form selectors are heuristics: this
 //      tool records which strategy filled which field, and a run it could not fill is
 //      reported as CAPTURE_FAILED_FORM_NOT_FILLED — never as a result.
-//   2. `--matrix`   (priority 2) The legacy-entry variant matrix, one variant per fresh
+//   2. `--candidates` (AA_ACCEPTANCE.md priority 1+2 checklist) The seven recorded candidate
+//      URLs (#1–#7 in the doc's evidence table) opened as real browser cases, one per fresh
+//      context, each reporting the final page, the seconds waited and the network failures
+//      (status + path only). The five `flightSearch` rows additionally snapshot the rendered
+//      form fields, so "BA ignores every prefill parameter" is re-measured in a browser
+//      instead of asserted from a rendering fetch.
+//   3. `--replay`   The follow-up question the checklist asks after a capture: reuse the URL
+//      BA produced and open it again in a BRAND-NEW context (fresh incognito, no cookies) —
+//      does it still reach BA flight results, or is it session-bound? The captured URL is
+//      held in memory only, never written to disk. `--replay-stdin` runs the same replay on
+//      a URL piped in (e.g. the operator's address bar) without ever echoing it.
+//   4. `--matrix`   (priority 2) The legacy-entry variant matrix, one variant per fresh
 //      browser context: en_eg locale, `&eId=113021`, the two-step homepage→processOffer
 //      session test, and the third-party URL shapes found in other projects that land on
 //      BA's /processing interstitial.
-//   3. default     The app's own output for the three BA shapes plus the AA metasearch
+//   5. default     The app's own output for the three BA shapes plus the AA metasearch
 //      link, and (with `--legacy`) the recorded-BLOCKED processOffer URLs, re-measured.
 //
 // The tool is deliberately read-only and privacy-safe:
@@ -30,6 +41,8 @@
 //   * URLs are printed redacted: origin, path and the documented search parameters
 //     survive; every other query value becomes "<redacted>" so transient redirect ids
 //     (`search-journey-id`, `cid`, …) can never be copied into logs, tests or docs.
+//   * network failures are recorded as status + PATH ONLY (never the query string),
+//     because a 403/429 from a CDN carries no search information and may carry a token.
 //
 // Usage (any machine with a real Chrome/Chromium and internet access):
 //   npm install --no-save --no-package-lock playwright
@@ -37,10 +50,14 @@
 //   node tools/ba-live-probe.mjs                    # app output + AA link, headless
 //   node tools/ba-live-probe.mjs --headful          # visible browser window
 //   node tools/ba-live-probe.mjs --capture          # fill BA's form by hand, capture its URL
+//   node tools/ba-live-probe.mjs --capture --replay # …then reopen that URL in a fresh context
+//   node tools/ba-live-probe.mjs --candidates       # the recorded #1–#7 rows, one fresh context each
 //   node tools/ba-live-probe.mjs --matrix           # legacy-entry variant matrix
 //   node tools/ba-live-probe.mjs --legacy           # re-open the BLOCKED processOffer URLs
+//   node tools/ba-live-probe.mjs --markdown         # paste-ready evidence table for the doc
 //   node tools/ba-live-probe.mjs --seconds=150      # wait longer for a price to resolve
 //   node tools/ba-live-probe.mjs --dry-run          # print every case URL (redacted), no browser
+//   pbpaste | node tools/ba-live-probe.mjs --headful --replay-stdin   # replay an address-bar URL
 //
 // Screenshots are written to artifacts/ (gitignored) and the JSON report is printed to
 // stdout. Paste the summary block into AA_ACCEPTANCE.md, redacted exactly as printed.
@@ -103,6 +120,33 @@ export function redactUrl(raw) {
   return `${u.origin}${u.pathname}${kept.length ? `?${kept.join('&')}` : ''}${u.hash ? '#<redacted>' : ''}`;
 }
 
+/** Origin + path only — no query at all. Used for sub-resource network failures, where a
+ *  status code and a path are the whole finding and any query value could be a token. */
+export function pathOnly(raw) {
+  try { const u = new URL(raw); return `${u.origin}${u.pathname}`; }
+  catch { return String(raw).split('?')[0].slice(0, 120); }
+}
+
+/** The parameter NAMES of a URL, sorted and deduped — what the doc may record as the
+ *  "format" of a captured BA URL, with every value replaced by `<redacted>`. */
+export function paramNames(raw) {
+  try { return [...new Set(new URL(raw).searchParams.keys())].sort(); }
+  catch { return []; }
+}
+
+/** Airport codes carried by a URL's documented `onds` payload (query or fragment). Used to
+ *  decide whether BA honoured the prefill — never guessed from other parameters, because
+ *  `tripType=ONE_WAY` would otherwise look like an airport code. */
+export function itineraryTokensFromUrl(raw) {
+  const onds = /onds=([^&#]+)/.exec(String(raw))?.[1] || '';
+  return [...new Set(onds.match(/[A-Z]{3}(?=-|_|,|$)/g) || [])];
+}
+
+/** One network failure, safe to print: status + method + path (never the query string). */
+export function failureEntry(status, method, raw) {
+  return { status, method: String(method || 'GET').toUpperCase(), path: pathOnly(raw) };
+}
+
 const PROCESSING_TEXT = /calculating your price|processing flight selection|payment is in progress/i;
 // Deliberately loose: any title that is NOT an interstitial is only reported as "possible
 // results" for a human to confirm on the screenshot — never as a pass.
@@ -116,6 +160,21 @@ export function classify(finalUrl, finalTitle, sawProcessing) {
   if (/\/error|access denied|unavailable/i.test(finalTitle)) return 'ERROR_PAGE';
   if (RESULTS_HINT.test(finalTitle)) return 'LEFT_INTERSTITIAL_FLIGHT_RESULTS_POSSIBLE';
   return 'LEFT_INTERSTITIAL_UNCLASSIFIED';
+}
+
+/** The replay verdict: same landing classes, namespaced so a fresh-context replay can never
+ *  be mistaken for the original capture's result. Only `REPLAY_FLIGHT_RESULTS_POSSIBLE`
+ *  would justify re-testing a BA prefill handoff, and it still needs a human to confirm the
+ *  results on the screenshot — it is never by itself a pass. */
+export function classifyReplay(finalUrl, finalTitle, sawProcessing) {
+  switch (classify(finalUrl, finalTitle, sawProcessing)) {
+    case 'LEFT_INTERSTITIAL_FLIGHT_RESULTS_POSSIBLE': return 'REPLAY_FLIGHT_RESULTS_POSSIBLE';
+    case 'STILL_PROCESSING_INTERSTITIAL': case 'UNKNOWN_PROCESS_OFFER_STATE': return 'REPLAY_PROCESSING_INTERSTITIAL';
+    case 'PROCESSING_PAYMENT_INTERSTITIAL': return 'REPLAY_PAYMENT_INTERSTITIAL';
+    case 'REDIRECTED_REGIONAL_HOMEPAGE': return 'REPLAY_REDIRECTED_HOMEPAGE';
+    case 'ERROR_PAGE': return 'REPLAY_ERROR_PAGE';
+    default: return 'REPLAY_UNCLASSIFIED';
+  }
 }
 
 // The app emits AA's historical metasearch URL for the whole itinerary, mixed carriers
@@ -132,11 +191,40 @@ export const AA_META_URL = 'https://www.aa.com/goto/metasearch?ITEN=' + encodeUR
   AA_LEGS.map((s, i) => `#${s.carrier}|${s.num}|${s.cls}|${s.origin}|${s.dest}|${s.epoch}|${i}`).join(''),
 ].join(','));
 
+/** The seven candidate URLs recorded in AA_ACCEPTANCE.md's evidence table (#1–#7), each one
+ *  exactly as written there, so a real-browser run answers the same questions per row: final
+ *  page, seconds waited and network failures. The five `flightSearch` rows also snapshot the
+ *  rendered form fields (`formCheck`): the record says the parameters are IGNORED, and a
+ *  browser run either confirms that (fields still empty) or refutes it (fields populated) —
+ *  but note that a populated field is *still* not flight results. */
+export function candidateCases() {
+  const FS = `${BA}/travel/book/public/en_gb/flightSearch`;
+  const FS_ONDS = `${FS}?${ONDS_ONE_WAY}&${PAX_QS}&ond=1`;
+  return [
+    { id: 'R1-flightSearch-no-params', label: 'R1 · doc row 1 — flightSearch, no params (the link the app ships)', expect: 'ba.com',
+      link: { url: FS, kind: 'search_unverified', label: 'search form' }, formCheck: { prefillExpected: null } },
+    { id: 'R2-flightSearch-onds-query', label: 'R2 · doc row 2 — flightSearch + onds/ad/yad/ch/inf/cabin/flex/ond as query', expect: 'ba.com',
+      link: { url: FS_ONDS, kind: 'search_unverified', label: 'search form + onds' }, formCheck: { prefillExpected: 'ignored' } },
+    { id: 'R3-flightSearch-two-slice', label: 'R3 · doc row 3a — flightSearch + the 2-slice onds payload', expect: 'ba.com',
+      link: { url: `${FS}?${ONDS_ROUND_TRIP}&${PAX_QS}&ond=2`, kind: 'search_unverified', label: 'search form + 2 slices' }, formCheck: { prefillExpected: 'ignored' } },
+    { id: 'R4-flightSearch-fragment', label: 'R4 · doc row 3b — the same payload as a #fragment', expect: 'ba.com',
+      link: { url: `${FS}#${ONDS_ONE_WAY}&${PAX_QS}&ond=1`, kind: 'search_unverified', label: 'search form + fragment' }, formCheck: { prefillExpected: 'ignored' } },
+    { id: 'R5-flightSearch-tripType', label: 'R5 · doc row 4 — flightSearch + tripType/from/to/departDate/cabinclass/adult', expect: 'ba.com',
+      link: { url: `${FS}?tripType=ONE_WAY&from=CDG&to=LHR&departDate=30/10/2026&cabinclass=C&adult=1`, kind: 'search_unverified', label: 'search form + tripType' }, formCheck: { prefillExpected: 'ignored' } },
+    { id: 'R6-processOffer-en_gb', label: 'R6 · doc row 5 — the recorded-BLOCKED processOffer payload (en_gb)', expect: 'ba.com',
+      link: { url: `${PROCESS_OFFER_GB}?${ONDS_ONE_WAY}&${PAX_QS}&ond=1`, kind: 'search_unverified', label: 'legacy' } },
+    { id: 'R7-processOffer-en_eg', label: 'R7 · doc row 6 — the same payload in the owner’s locale (en_eg)', expect: 'ba.com',
+      link: { url: `${PROCESS_OFFER_EG}?${ONDS_ONE_WAY}&${PAX_QS}&ond=1`, kind: 'search_unverified', label: 'legacy en_eg' } },
+    { id: 'R8-book-root-with-params', label: 'R8 · doc row 7 — /travel/book/public/en_gb with third-party prefill params (recorded: /processing)', expect: 'ba.com',
+      link: { url: `${BA}/travel/book/public/en_gb?origin=CDG&destination=LHR&departureDate=2026-10-30&adults=1&cabin=C`, kind: 'search_unverified', label: 'book root' } },
+  ];
+}
+
 /**
  * Every case this tool can open. `capture` cases are form-fill flows rather than URLs.
- * Flags mirror the CLI: {capture, matrix, legacy}.
+ * Flags mirror the CLI: {capture, candidates, matrix, legacy}.
  */
-export function buildCases({ capture = false, matrix = false, legacy = false } = {}) {
+export function buildCases({ capture = false, candidates = false, matrix = false, legacy = false } = {}) {
   const cases = [
     { id: 'A-ba-one-way-app-output', label: 'A · BA-only one-way (what the app opens today)', expect: 'ba.com',
       link: resolveAirlineLink(ONE_WAY, 'BA', PAX) },
@@ -151,13 +239,18 @@ export function buildCases({ capture = false, matrix = false, legacy = false } =
   if (capture) {
     // Priority 1: capture the prefill URL BA itself produces when a human fills the form.
     cases.push(
-      { id: 'F-capture-one-way', label: 'F · fill BA’s form by hand: one-way CDG-LHR 2026-10-30', expect: 'ba.com',
-        capture: { journeys: ondSlices(ONE_WAY), cabin: 'C', pax: PAX } },
-      { id: 'G-capture-round-trip', label: 'G · fill BA’s form by hand: round-trip CDG-LHR / LHR-CDG', expect: 'ba.com',
-        capture: { journeys: ondSlices(ROUND_TRIP), cabin: 'C', pax: PAX } },
+      { id: 'F-capture-one-way', label: 'F · fill BA’s form by hand: one-way CDG-LHR 2026-10-30 (flight 1 only, extra rows removed)', expect: 'ba.com',
+        capture: { journeys: ondSlices(ONE_WAY), cabin: 'C', pax: PAX, removeExtraRows: true } },
+      { id: 'G-capture-round-trip', label: 'G · fill BA’s form by hand: round-trip CDG-LHR / LHR-CDG (one row per slice)', expect: 'ba.com',
+        capture: { journeys: ondSlices(ROUND_TRIP), cabin: 'C', pax: PAX, removeExtraRows: true } },
       { id: 'H-capture-multi-city', label: 'H · fill BA’s form by hand: 3 O&D slices (CDG-MSY, MIA-STI, STI-BCN)', expect: 'ba.com',
-        capture: { journeys: ondSlices(MIXED_MULTI_CITY), cabin: 'C', pax: PAX } },
+        capture: { journeys: ondSlices(MIXED_MULTI_CITY), cabin: 'C', pax: PAX, removeExtraRows: true } },
     );
+  }
+
+  if (candidates) {
+    // The doc's recorded #1–#7 rows, re-measured in a real browser (priority 1+2 checklist).
+    cases.push(...candidateCases());
   }
 
   if (matrix) {
@@ -207,9 +300,29 @@ function legacyBaMultiCityUrl() {
 
 function instrument(context, page, log) {
   const tabLog = [];
+  // DevTools → Network equivalent: a failed request is recorded as status + method + PATH
+  // only. Query strings are dropped whole, so a CDN 403 (or a redirect carrying a session
+  // id) can never put a token into a log, report, doc or commit.
+  const networkFailures = [];
+  const requestFailures = [];
+  const MAX = 40;
+  const onPage = (p) => {
+    p.on('response', (r) => {
+      if (r.status() < 400 || networkFailures.length >= MAX) return;
+      const entry = failureEntry(r.status(), r.request().method(), r.url());
+      if (!networkFailures.some((f) => f.status === entry.status && f.path === entry.path)) networkFailures.push(entry);
+    });
+    p.on('requestfailed', (r) => {
+      if (requestFailures.length >= MAX) return;
+      const entry = { path: pathOnly(r.url()), error: String(r.failure()?.errorText || 'unknown').slice(0, 80) };
+      if (!requestFailures.some((f) => f.path === entry.path && f.error === entry.error)) requestFailures.push(entry);
+    });
+  };
+  onPage(page);
   context.on('page', (p) => {
     tabLog.push({ opened: true, url: redactUrl(p.url()) });
     p.on('framenavigated', (f) => { if (f === p.mainFrame()) tabLog.push({ navigated: redactUrl(f.url()) }); });
+    if (p !== page) onPage(p);
   });
   const redirects = [];
   page.on('response', (r) => {
@@ -223,6 +336,7 @@ function instrument(context, page, log) {
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 200)); });
   page.on('pageerror', (e) => consoleErrors.push(String(e.message).slice(0, 200)));
   log.redirects = redirects; log.tabLog = tabLog; log.consoleErrors = consoleErrors;
+  log.networkFailures = networkFailures; log.requestFailures = requestFailures;
 }
 
 async function acceptConsent(page, log) {
@@ -235,11 +349,33 @@ async function acceptConsent(page, log) {
   return false;
 }
 
-/** Watch a page until it leaves the interstitial or the wait budget runs out. */
-async function watch(page, log, waitSeconds, { stopWhenOffPath = null } = {}) {
+/** What the rendered form actually contains, in DOM order — the evidence behind the claim
+ *  "BA's search form ignores URL parameters". Inputs are capped and truncated; no value is
+ *  ever a credential (these are the itinerary fields the operator typed). */
+async function formState(page, expectedTokens = []) {
+  const values = await page.locator('input:visible, select:visible')
+    .evaluateAll((els) => els.map((el) => String(el.value ?? '').trim().slice(0, 40)).filter(Boolean).slice(0, 12))
+    .catch(() => []);
+  const fieldCount = await page.locator('input:visible, select:visible').count().catch(() => 0);
+  // Airport codes only — deliberately NOT "2026"/"30/10", because a date box carrying today's
+  // date would otherwise be misread as a honoured prefill. The raw values are in the report
+  // either way, so a human can see exactly what BA put in its own fields.
+  const codes = new Set(expectedTokens.map((t) => String(t).toUpperCase()));
+  const fromItinerary = values.filter((v) => {
+    const up = v.toUpperCase();
+    return [...codes].some((c) => up.includes(c)) || /\b(CDG|LHR|MSY|STI|BCN)\b/.test(up);
+  });
+  return { visibleFieldCount: fieldCount, filledValues: values, itineraryPrefillFound: fromItinerary.length > 0 };
+}
+
+/** Watch a page until it leaves the interstitial or the wait budget runs out.
+ *  `stopWhenStable` ends the watch early once the URL and title have not changed for three
+ *  consecutive samples — a form that renders instantly should not burn the whole budget. */
+async function watch(page, log, waitSeconds, { stopWhenOffPath = null, stopWhenStable = false } = {}) {
   const steps = [];
   let sawProcessing = false;
-  const deadline = Date.now() + waitSeconds * 1000;
+  const startedAt = Date.now();
+  const deadline = startedAt + waitSeconds * 1000;
   while (Date.now() < deadline) {
     await page.waitForTimeout(1000);
     const url = redactUrl(page.url());
@@ -254,21 +390,28 @@ async function watch(page, log, waitSeconds, { stopWhenOffPath = null } = {}) {
       try { onPath = new RegExp(stopWhenOffPath).test(new URL(page.url()).pathname); } catch {}
       if (!onPath && steps.length > 1) break;
     }
+    if (stopWhenStable && steps.length >= 3) {
+      const [a, b, c] = steps.slice(-3);
+      if (a.url === b.url && b.url === c.url && a.title === b.title && b.title === c.title) break;
+    }
   }
   log.steps = steps; log.sawProcessing = sawProcessing;
+  log.secondsWaited = (log.secondsWaited || 0) + Math.round((Date.now() - startedAt) / 1000);
   return { sawProcessing };
 }
 
-async function finish(page, log, probe) {
+async function finish(page, log, probe, { shotSuffix = '' } = {}) {
   const finalUrl = redactUrl(page.url());
   const finalTitle = await page.title().catch(() => '');
   const finalBody = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
   mkdirSync(ARTIFACTS, { recursive: true });
-  await page.screenshot({ path: join(ARTIFACTS, `${probe.id}.png`), fullPage: false }).catch(() => {});
+  const shot = `${probe.id}${shotSuffix}.png`;
+  await page.screenshot({ path: join(ARTIFACTS, shot), fullPage: false }).catch(() => {});
   return {
     finalUrl, finalTitle,
     outcome: log.outcome || classify(finalUrl, finalTitle, log.sawProcessing),
     finalTextSample: finalBody.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 12),
+    screenshot: `artifacts/${shot}`,
   };
 }
 
@@ -278,10 +421,65 @@ function report(probe, log, tail) {
     openedUrl: probe.link?.url ? redactUrl(probe.link.url) : `${redactUrl(FLIGHT_SEARCH)} (form filled by hand)`,
     openedLabel: probe.link?.label ?? 'capture BA’s own search URL',
     acceptedCookieBanner: !!log.acceptedConsent, sawProcessingInterstitial: !!log.sawProcessing,
+    secondsWaited: log.secondsWaited ?? 0,
+    networkFailures: log.networkFailures || [], requestFailures: log.requestFailures || [],
     filledFields: log.filledFields, captureOutcome: log.captureOutcome,
     steps: log.steps, redirects: log.redirects, extraTabs: (log.tabLog || []).filter((t) => t.opened),
     consoleErrors: log.consoleErrors, screenshot: `artifacts/${probe.id}.png`, ...tail,
   };
+}
+
+/** How many of BA's 3+ form rows to remove so exactly one row remains per O&D slice.
+ *  Pure so the capture plan can be unit-tested without a browser. */
+export function plannedRemovals(visibleRows, slices) {
+  return Math.max(0, Math.min(4, (Number(visibleRows) || 0) - (Number(slices) || 0)));
+}
+
+/** Verdict for a candidate row that also snapshot the form: the recorded answer is
+ *  "parameters ignored / fields empty", and only the browser may say otherwise. */
+export function formVerdict(form, formCheck) {
+  if (!form) return null;
+  if (formCheck?.prefillExpected === 'ignored')
+    return form.itineraryPrefillFound ? 'PREFILL_APPLIED_FORM_POPULATED' : 'PREFILL_IGNORED_FORM_EMPTY';
+  return form.itineraryPrefillFound ? 'PREFILL_APPLIED_FORM_POPULATED' : 'FORM_RENDERED_EMPTY';
+}
+
+/** Replay a captured URL in a BRAND-NEW context (fresh incognito, no cookies, no storage):
+ *  the checklist's follow-up question — does BA's own produced URL still reach results when
+ *  it is opened cold? The URL itself is never printed or written: only its parameter names. */
+async function runReplay(browser, probe, rawUrl, opts, { suffix = '-replay' } = {}) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const replay = { freshContext: true, paramNames: paramNames(rawUrl), path: pathOnly(rawUrl) };
+  const page = await context.newPage();
+  // A separate log: the replay's timeline and failures must be attributable to the replay,
+  // not merged into the capture that produced the URL.
+  const sub = { noConsent: opts.noConsent, steps: [] };
+  instrument(context, page, sub);
+  try {
+    await page.goto(rawUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    replay.acceptedCookieBanner = await acceptConsent(page, sub);
+    const replayProbe = { ...probe, id: `${probe.id}${suffix}` };
+    await watch(page, sub, opts.waitSeconds);
+    const samePath = pathOnly(page.url()) === replay.path;
+    replay.sameUrlPathAfterReplay = samePath;
+    replay.finalUrl = redactUrl(page.url());
+    replay.finalTitle = await page.title().catch(() => '');
+    replay.secondsWaited = sub.secondsWaited ?? 0;
+    replay.outcome = classifyReplay(replay.finalUrl, replay.finalTitle, sub.sawProcessing);
+    const body = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
+    replay.finalTextSample = body.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 12);
+    replay.steps = sub.steps;
+    mkdirSync(ARTIFACTS, { recursive: true });
+    replay.screenshot = `artifacts/${replayProbe.id}.png`;
+    await page.screenshot({ path: join(ARTIFACTS, `${replayProbe.id}.png`), fullPage: false }).catch(() => {});
+  } catch (e) {
+    replay.outcome = 'REPLAY_NAVIGATION_FAILED';
+    replay.error = String(e.message).slice(0, 160);
+  }
+  replay.networkFailures = sub.networkFailures || [];
+  replay.requestFailures = sub.requestFailures || [];
+  await context.close();
+  return replay;
 }
 
 async function runUrlCase(browser, probe, { waitSeconds, noConsent }) {
@@ -300,10 +498,14 @@ async function runUrlCase(browser, probe, { waitSeconds, noConsent }) {
   log.acceptedConsent = await acceptConsent(page, log);
   await page.goto(probe.link.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   if (!log.acceptedConsent) log.acceptedConsent = await acceptConsent(page, log);
-  await watch(page, log, waitSeconds, { stopWhenOffPath: /processOffer/ });
+  await watch(page, log, waitSeconds, { stopWhenOffPath: /processOffer/, stopWhenStable: !!probe.formCheck });
+  // Candidate rows snapshot the rendered form: the doc says the parameters are ignored, so
+  // the run must show either an empty form (record confirmed) or populated fields (record
+  // refuted — still NOT flight results, and a human has to look at the screenshot).
+  const form = probe.formCheck ? await formState(page, itineraryTokensFromUrl(probe.link?.url || '')) : null;
   const tail = await finish(page, log, probe);
   await context.close();
-  return report(probe, log, tail);
+  return report(probe, log, { ...tail, form: form || undefined, formVerdict: form ? formVerdict(form, probe.formCheck) : undefined });
 }
 
 /** Fill BA's multi-city form by hand and capture the URL BA itself produces. */
@@ -365,11 +567,54 @@ async function runCaptureCase(browser, probe, { waitSeconds, noConsent }) {
     filled += await fillStation(i, 'destination|to', j.dest) ? 1 : 0;
     filled += await fillDate(i, j.ymd) ? 1 : 0;
   }
-  const classOption = page.getByRole('radio', { name: /business/i }).first();
-  if (await classOption.isVisible({ timeout: 1500 }).catch(() => false)) {
-    await classOption.click({ timeout: 2000 }).catch(() => {});
-    log.filledFields.push({ label: 'travel-class', value: probe.capture.cabin, ok: true });
+  // Travel class: BA renders it as radios today, but a select or a segmented button would
+  // mount nothing for the radio strategy, so every shape is tried and the result recorded.
+  const classTried = [
+    ['radio', () => page.getByRole('radio', { name: /business/i })],
+    ['combobox', () => page.getByRole('combobox', { name: /class|cabin/i })],
+    ['button', () => page.getByRole('button', { name: /business/i })],
+  ];
+  log.filledFields.push({ label: 'travel-class', value: probe.capture.cabin, ok: false, tried: 'none visible' });
+  for (const [strategy, find] of classTried) {
+    const el = find().first();
+    if (!(await el.isVisible({ timeout: 1500 }).catch(() => false))) continue;
+    if (strategy === 'combobox') await el.selectOption({ label: /business/i }).catch(() => el.selectOption('C').catch(() => {}));
+    else await el.click({ timeout: 2000 }).catch(() => {});
+    log.filledFields[log.filledFields.length - 1] = { label: 'travel-class', value: probe.capture.cabin, ok: true, strategy };
+    break;
   }
+
+  // The checklist says "fill Flight 1 … and remove the other rows": leave exactly one row per
+  // O&D slice, clicking BA's own "Remove flight" controls from the bottom like a visitor, and
+  // record how many rows were actually removed.
+  let rowsRemoved = 0;
+  if (probe.capture.removeExtraRows) {
+    const remove = page.getByRole('button', { name: /remove (this )?flight/i });
+    const desired = probe.capture.journeys.length;
+    const existing = await remove.count().catch(() => 0);
+    for (let i = 0; i < plannedRemovals(existing, desired); i++) {
+      const btn = remove.last();
+      if (!(await btn.isVisible({ timeout: 1200 }).catch(() => false))) break;
+      await btn.click({ timeout: 2000 }).catch(() => {});
+      await page.waitForTimeout(600);
+      rowsRemoved++;
+    }
+    log.rowsRemoved = rowsRemoved;
+    log.rowsBeforeSubmit = await remove.count().catch(() => 0);
+  }
+
+  // Read the values back out of the DOM: a click that did not stick must never be recorded
+  // as a filled field, because that is exactly how a fake "captured prefill" would be born.
+  const afterFill = await formState(page);
+  log.formAfterFill = afterFill;
+
+  // Informational only: an autocomplete can show "Paris (CDG)" or clear the box after Enter,
+  // so an empty read-back is reported as a warning, never used to fake a failure — or a pass.
+  const expectedTokens = probe.capture.journeys.flatMap((j) => [j.origin, j.dest]);
+  const blob = (afterFill.filledValues || []).join(' ');
+  log.formReadBack = { expected: expectedTokens, readBackFound: expectedTokens.filter((t) => blob.includes(t)) };
+  if (log.formReadBack.readBackFound.length < expectedTokens.length)
+    log.readBackWarning = 'The form fields did not read back the typed airports; check the screenshot before trusting the capture.';
 
   const wanted = probe.capture.journeys.length * 3;
   if (filled < wanted) {
@@ -394,40 +639,125 @@ async function runCaptureCase(browser, probe, { waitSeconds, noConsent }) {
     search.click({ timeout: 5000 }).catch(() => {}),
   ]);
   await watch(page, log, waitSeconds, { stopWhenOffPath: 'flightSearch' });
-  const moved = page.url() !== before;
+  const captured = page.url();
+  const moved = captured !== before;
   log.captureOutcome = moved ? 'CAPTURED_BA_SEARCH_URL' : 'CAPTURE_SUBMIT_NO_NAVIGATION';
-  if (moved) log.outcome = classify(page.url(), await page.title().catch(() => ''), log.sawProcessing);
+  if (moved) log.outcome = classify(captured, await page.title().catch(() => ''), log.sawProcessing);
   else log.outcome = 'CAPTURE_SUBMIT_NO_NAVIGATION';
   const tail = await finish(page, log, probe);
+  // The URL BA itself produced: values are never printed or written, only the parameter
+  // NAMES (the recordable "format") and whether the page carried flight results.
+  const capture = {
+    ...tail, filledOf: `${filled}/${wanted}`, urlBeforeSubmit: redactUrl(before),
+    rowsRemoved: log.rowsRemoved ?? 0, formAfterFill: log.formAfterFill,
+    formReadBack: log.formReadBack, readBackWarning: log.readBackWarning,
+    capturedParamNames: moved ? paramNames(captured) : [],
+    capturedPath: moved ? pathOnly(captured) : null,
+  };
+  if (moved && opts.replay) capture.replay = await runReplay(browser, probe, captured, opts);
   await context.close();
-  return report(probe, log, { ...tail, filledOf: `${filled}/${wanted}`, urlBeforeSubmit: redactUrl(before) });
+  return report(probe, log, capture);
 }
 
-function printReport(r) {
+export function printReport(r) {
   console.log(`\n### ${r.case} — ${r.description}\n    opening: ${r.openedUrl}`);
   console.log(`    outcome: ${r.outcome}${r.captureOutcome && r.captureOutcome !== r.outcome ? ` (${r.captureOutcome})` : ''}`);
   console.log(`    final  : ${r.finalUrl}`);
   console.log(`    title  : ${r.finalTitle}`);
+  console.log(`    waited : ${r.secondsWaited ?? 0}s`);
+  if (r.formVerdict) console.log(`    form   : ${r.formVerdict}${r.form ? ` (${r.form.filledValues?.length ?? 0} field(s) non-empty of ${r.form.visibleFieldCount} visible)` : ''}`);
   for (const s of r.steps || []) console.log(`      +${s.t}s ${s.url} :: ${s.title}`);
-  for (const f of r.filledFields || []) console.log(`      fill: row ${f.row ?? '-'} ${f.label}=${f.value} ${f.ok === false ? 'FAILED' : ''}`);
+  for (const f of r.filledFields || []) console.log(`      fill: row ${f.row ?? '-'} ${f.label}=${f.value}${f.strategy !== undefined ? ` [${f.strategy}]` : ''} ${f.ok === false ? 'FAILED' : ''}`);
   for (const t of r.extraTabs || []) console.log(`      extra tab: ${t.url}${t.navigated ? ` -> ${t.navigated}` : ''}`);
+  for (const e of r.networkFailures || []) console.log(`      net: ${e.status} ${e.method} ${e.path}`);
+  for (const e of r.requestFailures || []) console.log(`      net: FAILED ${e.path} (${e.error})`);
+  if (r.capturedParamNames?.length) console.log(`    captured params: ${r.capturedParamNames.join(', ')} (values redacted)`);
+  if (r.readBackWarning) console.log(`    WARNING: ${r.readBackWarning}`);
+  if (r.replay) {
+    console.log(`    REPLAY (fresh context, no cookies) → ${r.replay.outcome} after ${r.replay.secondsWaited ?? 0}s`);
+    console.log(`      replay final: ${r.replay.finalUrl} :: ${r.replay.finalTitle}`);
+    if (r.replay.sameUrlPathAfterReplay === false) console.log('      replay landed on a DIFFERENT path than the captured URL');
+    for (const s of r.replay.steps || []) console.log(`        +${s.t}s ${s.url} :: ${s.title}`);
+    for (const e of r.replay.networkFailures || []) console.log(`        net: ${e.status} ${e.method} ${e.path}`);
+    for (const e of r.replay.requestFailures || []) console.log(`        net: FAILED ${e.path} (${e.error})`);
+  }
+  if (r.error) console.log(`    error: ${r.error}`);
 }
 
-function parseArgv(argv) {
+const mdCell = (v) => String(v ?? '—').replace(/\|/g, '\\|');
+/** Paste-ready evidence table: exactly the columns the checklist asks for (final page,
+ *  seconds waited, network failures). Values are already redacted when they get here. */
+export function markdownTable(rows) {
+  const head = '| # | URL opened (redacted) | Landing observed | Seconds waited | Network failures (status · path only) |\n| --- | --- | --- | --- | --- |';
+  const body = rows.map((r) => {
+    const net = [...(r.networkFailures || []).map((e) => `${e.status} ${e.path}`),
+      ...(r.requestFailures || []).map((e) => `FAILED ${e.path} (${e.error})`)];
+    const landing = r.replay ? `${r.outcome} → replay in fresh context: ${r.replay.outcome}` : r.outcome;
+    return `| ${mdCell(r.id)} | \`${mdCell(r.url)}\` | ${mdCell(r.landing ?? landing)} | ${mdCell(r.secondsWaited)} | ${mdCell(net.length ? net.join('; ') : 'none recorded')} |`;
+  });
+  return `${head}\n${body.join('\n')}`;
+}
+
+/** Rows for the table, from a finished run (reports) or from the case list (dry run). */
+export function evidenceRows(cases, reports) {
+  if (!reports) return cases.map((c) => ({
+    id: c.id, url: c.capture ? `${redactUrl(FLIGHT_SEARCH)} (filled by hand)` : redactUrl(c.link?.url || ''),
+    landing: 'not run', secondsWaited: null,
+  }));
+  return reports.map((r) => {
+    // A capture's own URL is the interesting one: show it as path + parameter names, every
+    // value `<redacted>` — the recordable format, never a live session URL.
+    const captured = r.capturedParamNames?.length
+      ? `${r.capturedPath}?${r.capturedParamNames.map((k) => `${k}=<redacted>`).join('&')}`
+      : null;
+    return {
+      id: r.case, url: captured ? `capture produced ${captured}` : r.openedUrl,
+      landing: r.replay ? `${r.outcome} → replay in fresh context: ${r.replay.outcome}` : r.outcome,
+      secondsWaited: r.secondsWaited,
+      networkFailures: r.networkFailures, requestFailures: r.requestFailures, replay: r.replay,
+    };
+  });
+}
+
+export function parseArgv(argv) {
   const flag = (name) => argv.includes(`--${name}`);
   const value = (name, fallback) => {
     const hit = argv.find((a) => a.startsWith(`--${name}=`));
     return hit ? hit.slice(name.length + 3) : fallback;
   };
+  // A typo in --seconds must not silently turn every wait into 0s (which would report every
+  // interstitial as "still processing" after 1 sample, or worse, as a landing).
+  const seconds = Number(value('seconds', 75));
   return {
-    waitSeconds: Number(value('seconds', 75)),
+    waitSeconds: Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 900) : 75,
     headful: flag('headful'),
     capture: flag('capture'),
+    candidates: flag('candidates'),
     matrix: flag('matrix'),
     legacy: flag('legacy') || flag('legacy-multi-city'),
     noConsent: flag('no-consent'),
+    // Two-pass runs (a fast pass over the form pages, a slow pass over the interstitials)
+    // must not overwrite each other's report.
+    report: String(value('report', 'ba-live-probe-report.json')).replace(/[^A-Za-z0-9._-]/g, '') || 'ba-live-probe-report.json',
+    // Replay only has something to replay when a capture produced a URL — or when the
+    // operator pipes one in via --replay-stdin (never echoed, never written to disk).
+    replay: flag('replay') || flag('replay-stdin'),
+    replayStdin: flag('replay-stdin'),
+    markdown: flag('markdown') || flag('candidates') || flag('replay-stdin'),
     dryRun: flag('dry-run') || flag('list-cases'),
   };
+}
+
+/** One URL for --replay-stdin, read from stdin. Validated, never printed, never persisted. */
+async function readStdinUrl() {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  const raw = Buffer.concat(chunks).toString('utf8').trim().split(/\s+/)[0] || '';
+  if (!/^https?:\/\//i.test(raw)) {
+    console.error('--replay-stdin expects one http(s) URL on stdin (e.g. pbpaste | node tools/ba-live-probe.mjs --replay-stdin).');
+    return null;
+  }
+  return raw;
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -438,18 +768,36 @@ export async function main(argv = process.argv.slice(2)) {
     // list and the redaction rules can be reviewed (and unit-tested) anywhere.
     for (const probe of cases) {
       const url = probe.capture ? `${redactUrl(FLIGHT_SEARCH)} (fill by hand: ${probe.capture.journeys.map((j) => `${j.origin}-${j.dest}_${j.ymd}`).join(', ')})` : redactUrl(probe.link.url);
-      console.log(`${probe.id}\t${url}`);
+      console.log(`${probe.id}\t${url}${probe.formCheck ? `\t[form check: prefill expected ${probe.formCheck.prefillExpected || 'n/a'}]` : ''}`);
     }
     console.log(`\n${cases.length} case(s); no browser launched, no cookies, no unredacted URL.`);
+    if (opts.markdown) console.log(`\n${markdownTable(evidenceRows(cases))}`);
     return;
   }
-  let chromium;
-  try { ({ chromium } = await import('playwright')); }
-  catch { console.error('Playwright is not installed. Run:\n  npm install --no-save --no-package-lock playwright\n  npx playwright install chromium'); process.exit(2); }
-  const launch = { headless: !opts.headful, args: ['--no-sandbox'] };
-  let browser;
-  try { browser = await chromium.launch({ ...launch, channel: 'chrome' }); }
-  catch { browser = await chromium.launch(launch); }
+  if (opts.replayStdin && !opts.capture) {
+    // Stand-alone replay of a URL the operator captured elsewhere (their own address bar).
+    const raw = await readStdinUrl();
+    if (!raw) { process.exit(2); }
+    const chromium = await importPlaywright();
+    if (!chromium) process.exit(2);
+    const browser = await launchBrowser(chromium, opts);
+    const probe = { id: 'stdin-replay', label: 'replay of a URL captured outside this tool', expect: 'ba.com' };
+    const replay = await runReplay(browser, probe, raw, opts);
+    await browser.close();
+    console.log(`\n### ${probe.id}: ${replay.outcome} after ${replay.secondsWaited ?? 0}s`);
+    console.log(`    path (values stripped): ${replay.path}`);
+    console.log(`    params: ${replay.paramNames.join(', ') || 'none'} (values redacted)`);
+    console.log(`    final : ${replay.finalUrl} :: ${replay.finalTitle}`);
+    for (const s of replay.steps || []) console.log(`      +${s.t}s ${s.url} :: ${s.title}`);
+    for (const e of replay.networkFailures || []) console.log(`      net: ${e.status} ${e.method} ${e.path}`);
+    for (const e of replay.requestFailures || []) console.log(`      net: FAILED ${e.path} (${e.error})`);
+    writeReport(opts, [{ case: probe.id, description: probe.label, openedUrl: replay.path, outcome: replay.outcome, ...replay }]);
+    console.log('\nNo cookies, storage dumps or unredacted URLs were written.');
+    return;
+  }
+  const chromium = await importPlaywright();
+  if (!chromium) process.exit(2);
+  const browser = await launchBrowser(chromium, opts);
 
   const reports = [];
   for (const probe of cases) {
@@ -461,10 +809,32 @@ export async function main(argv = process.argv.slice(2)) {
     printReport(r);
   }
   await browser.close();
+  if (opts.markdown) console.log(`\n${markdownTable(evidenceRows(cases, reports))}\n`);
+  writeReport(opts, reports);
+  console.log('\nNo cookies, storage dumps or unredacted URLs were written.');
+}
+
+function writeReport(opts, reports) {
   mkdirSync(ARTIFACTS, { recursive: true });
-  const out = join(ARTIFACTS, 'ba-live-probe-report.json');
+  const out = join(ARTIFACTS, opts.report || 'ba-live-probe-report.json');
   writeFileSync(out, JSON.stringify({ ranAt: new Date().toISOString(), waitSeconds: opts.waitSeconds, reports }, null, 2));
-  console.log(`\nJSON report: ${out}\nScreenshots: artifacts/*.png\nNo cookies, storage dumps or unredacted URLs were written.`);
+  console.log(`\nJSON report: ${out}\nScreenshots: artifacts/*.png`);
+  return out;
+}
+
+async function importPlaywright() {
+  try { return (await import('playwright')).chromium; }
+  catch {
+    console.error('Playwright is not installed. Run:\n  npm install --no-save --no-package-lock playwright\n  npx playwright install chromium');
+    return null;
+  }
+}
+
+/** Prefer the operator's installed Chrome, fall back to Playwright's bundled Chromium. */
+async function launchBrowser(chromium, opts) {
+  const launch = { headless: !opts.headful, args: ['--no-sandbox'] };
+  try { return await chromium.launch({ ...launch, channel: 'chrome' }); }
+  catch { return await chromium.launch(launch); }
 }
 
 const invokedDirectly = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);

@@ -51,10 +51,13 @@ field 9). Google Flights takes one cabin per search, so a mixed-cabin itinerary 
 preserved leg by leg, and the note says so. It is an unverified third-party search, never an
 airline booking or fare. The O&D slice gate and the legacy
 `buildBAProcessOfferUrl` survive only for manual re-probing via `tools/ba-live-probe.mjs` (which
-drives a real browser, can fill BA's form by hand to capture the URL BA itself produces, and
-redacts transient tokens); nothing in the app calls a BA builder any more, and
-`assertNotBlockedBaHandoff` refuses to emit any BA URL containing `processOffer`. Full evidence
-table in [AA_ACCEPTANCE.md](AA_ACCEPTANCE.md). Delta and United
+drives a real browser, can fill BA's form by hand to capture the URL BA itself produces, reopen
+that URL in a fresh incognito context to see whether it works cold, re-measure the seven recorded
+candidate URLs with their final page / seconds waited / network failures, and redact transient
+tokens — status and path only for failed requests); nothing in the app calls a BA builder any
+more, and `assertNotBlockedBaHandoff` refuses to emit any BA URL containing `processOffer`. Full
+evidence table, the owner runbook and the promotion rule in
+[AA_ACCEPTANCE.md](AA_ACCEPTANCE.md). Delta and United
 direct one-way/round-trip itineraries have *unverified search prefills* (not flight
 selection or checkout). All other carriers use their own directory homepage. No fabricated price
 or passenger details are passed to these sites.
