@@ -3,7 +3,7 @@
 A single-page tool that turns a GDS (Sabre/Amadeus) itinerary into booking-ready links and
 BookWithMatrix-valid JSON — fronted by a **real two-factor sign-in** gate.
 
-Made by Lamar García · lamar@bcflights.com
+Made by Adham Badran
 
 ---
 
@@ -110,11 +110,15 @@ await resend.emails.send({ from: FROM_EMAIL, to: requesterEmail, subject: '…',
 **Resend setup:**
 No API key is committed to the repository. To enable OTP delivery:
 1. Sign in at https://resend.com and create a key under **API Keys**.
-2. Set `RESEND_API_KEY` in your environment or Vercel settings.
-3. For a quick test sender, you can use `FROM_EMAIL=Spicy Link Generator <onboarding@resend.dev>`
-   (delivers only to your Resend account email). Sign-in codes now go to **arbitrary
-   @bcflights.com / @travelbusinessclass.com addresses**, so production needs a verified
-   domain: **Domains → Add domain**, then set `FROM_EMAIL` to `login@bcflights.com`.
+2. **Verify the sending domain** at https://resend.com/domains → **Add domain**
+   (`bcflights.com`, or a subdomain such as `send.bcflights.com`) and add the DNS records
+   it shows. This step is **mandatory**: sign-in codes go to real users, and Resend refuses
+   to email them from an unverified domain.
+3. Set `RESEND_API_KEY` in your environment or Vercel settings.
+4. Set `FROM_EMAIL` to an address on that verified domain, e.g.
+   `Spicy Link Generator <login@bcflights.com>`. If `FROM_EMAIL` is left empty the app
+   sends from the first `ALLOWED_DOMAINS` entry instead — never from the sandbox address
+   below, which cannot send to your users.
 
 **Deploy:**
 1. Push this folder to GitHub.
@@ -123,7 +127,8 @@ No API key is committed to the repository. To enable OTP delivery:
 4. **Settings → Environment Variables** (all optional — working defaults are built-in):
    - `AUTH_SECRET`     ← **recommended** (`openssl rand -hex 32`)
    - `RESEND_API_KEY`  ← required for OTP delivery
-   - `FROM_EMAIL`      ← **set this on a verified domain** (defaults to `onboarding@resend.dev`)
+   - `FROM_EMAIL`      ← **set this on a verified domain** (when unset it defaults to
+     `login@<first ALLOWED_DOMAINS entry>`, never to the resend.dev sandbox address)
    - `ALLOWED_DOMAINS` (comma-separated, default `bcflights.com,travelbusinessclass.com`;
      the legacy single-value `ALLOWED_DOMAIN` still works)
 5. Click **Deploy**. Every future `git push` redeploys automatically.
@@ -134,7 +139,9 @@ Open this in your browser, using YOUR site's address:
 https://YOUR-SITE.vercel.app/api/health
 ```
 - Returns `{"ok":true,"app":"Spicy Link Generator",...}` → the server is deployed ✓
-  Check `mailConfigured`: it must be `true` for production OTP emails to be sent.
+  Check `mailConfigured` (a key is present) **and** `mailCanSendToUsers` — the second one
+  is the one that matters: if it is `false`, sign-in emails cannot reach your users yet
+  (see the next section).
 - Returns a 404 / "not found" page → the API is NOT running. You are either on a
   static-only host (Netlify Drop / GitHub Pages — those can't run the functions),
   opened the file by double-clicking it, or deployed without the `api/` folder.
@@ -144,6 +151,29 @@ https://YOUR-SITE.vercel.app/api/health
 > If you see "Network error — try again" on the login page, it means the browser
 > can't reach `/api/*` — almost always because the page is open as a local file,
 > on a static host, or in a sandboxed preview. Test on the Vercel URL instead.
+
+### ⚙ "You can only send testing emails to your own email address" — the sign-in email fails
+
+That error is Resend's, and it means `FROM_EMAIL` is still Resend's **sandbox sender**
+(`onboarding@resend.dev`). The sandbox address may only email the address your Resend
+account is registered to, so a code for a real user is always rejected. Fix it in order:
+
+1. **Verify a sending domain** — https://resend.com/domains → **Add domain**
+   (`bcflights.com`, or a subdomain such as `send.bcflights.com`), add the SPF/DKIM DNS
+   records it shows, and wait for the domain to read **Verified**.
+2. **Set the sender in Vercel** — Settings → Environment Variables →
+   `FROM_EMAIL = Spicy Link Generator <login@bcflights.com>` (an address on that verified
+   domain), for **Production** and **Preview**.
+3. **Redeploy** — Deployments → ⋯ → **Redeploy**, so the new variable is picked up.
+4. **Confirm** — open `/api/health`: `mailCanSendToUsers` must be `true`. Request a code again.
+
+The login page reports this as a short **⚙ Setup needed** box; it no longer prints Resend's
+raw multi-line error at the visitor.
+
+**Want to watch the flow work before the DNS records are live?** The sandbox sender *can*
+email the address your Resend account is registered to. Temporarily set
+`ALLOWED_DOMAINS=<domain of that address>` (for example `gmail.com`) and sign in with that
+exact address. Put the real domains back afterwards.
 
 ## 3 · Change the allowed domains
 

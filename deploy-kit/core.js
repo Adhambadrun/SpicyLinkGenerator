@@ -35,8 +35,10 @@ export const DEFAULT_ALLOWED_DOMAINS = ['bcflights.com', 'travelbusinessclass.co
 // Returns the list of email domains that may sign in. Accepts a comma/space/semicolon-separated
 // list in ALLOWED_DOMAINS (preferred) or the legacy single-value ALLOWED_DOMAIN; a leading "@"
 // on any entry is tolerated. Falls back to DEFAULT_ALLOWED_DOMAINS when neither is set.
-export function allowedDomains() {
-  const raw = process.env.ALLOWED_DOMAINS || process.env.ALLOWED_DOMAIN || '';
+// An environment object can be passed in (the mailer derives its sender address from it).
+export function allowedDomains(environment = process.env) {
+  const env = environment || {};
+  const raw = env.ALLOWED_DOMAINS || env.ALLOWED_DOMAIN || '';
   const list = String(raw)
     .split(/[,\s;]+/)
     .map((d) => d.trim().toLowerCase().replace(/^@+/, ''))
@@ -135,6 +137,9 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
       : false;
   const sentOk = sent === true || (sent && sent.ok === true);
   const sentErr = (sent && typeof sent.error === 'string' && sent.error) || '';
+  // Configuration-class failures (sandbox sender, unverified domain, bad API key) are
+  // marked so the login page can present them as "setup needed" instead of a wrong code.
+  const sentSetup = Boolean(sent && sent.ok !== true && sent.setup === true);
 
   if (devMode) {
     // Local testing or protected preview only. The code is handed back so the
@@ -154,7 +159,13 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
   }
 
   if (!sentOk) {
-    return { status: 502, json: { error: sentErr || 'Could not send the sign-in code email. Check the server email configuration.' } };
+    return {
+      status: 502,
+      json: {
+        error: sentErr || 'Could not send the sign-in code email. Check the server email configuration.',
+        setupError: sentSetup,
+      },
+    };
   }
   return { status: 200, json: { ok: true, token, message: `A 6-digit code was emailed to ${e}.` } };
 }

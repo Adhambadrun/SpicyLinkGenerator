@@ -7,6 +7,11 @@
 process.env.DEV_MODE = '1';
 delete process.env.RESEND_API_KEY;
 delete process.env.AUTH_SECRET;
+// The sender is derived from the allowed domains when FROM_EMAIL is unset, so the
+// assertions below need the built-in default list rather than whatever the machine has.
+delete process.env.ALLOWED_DOMAINS;
+delete process.env.ALLOWED_DOMAIN;
+delete process.env.FROM_EMAIL;
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -125,5 +130,30 @@ test('api/session is 401 without a cookie, api/health is ok and reports mailConf
   assert.equal(h.statusCode, 200);
   assert.equal(h.body.ok, true);
   assert.equal(h.body.mailConfigured, false);
-  assert.equal(h.body.mailFrom, 'Spicy Link Generator <onboarding@resend.dev>');
+  // Without an explicit FROM_EMAIL the sender is the first allowed sign-in domain, never
+  // the resend.dev sandbox address (which can only email the Resend account owner).
+  assert.equal(h.body.mailFrom, 'Spicy Link Generator <login@bcflights.com>');
+  assert.equal(h.body.mailCanSendToUsers, false, 'no API key yet, so nothing can be sent');
+  assert.equal(h.body.setupHint, undefined);
+});
+
+test('api/health warns when the sender is still the resend.dev sandbox address', async () => {
+  const previousKey = process.env.RESEND_API_KEY;
+  const previousFrom = process.env.FROM_EMAIL;
+  process.env.RESEND_API_KEY = 're_test';
+  process.env.FROM_EMAIL = 'Spicy Link Generator <onboarding@resend.dev>';
+
+  try {
+    const h = stubRes();
+    await health(get(), h);
+    assert.equal(h.statusCode, 200);
+    assert.equal(h.body.mailConfigured, true);
+    assert.equal(h.body.mailCanSendToUsers, false, 'the sandbox sender can only email the Resend account owner');
+    assert.match(h.body.setupHint, /resend\.com\/domains/);
+  } finally {
+    if (previousKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousKey;
+    if (previousFrom === undefined) delete process.env.FROM_EMAIL;
+    else process.env.FROM_EMAIL = previousFrom;
+  }
 });
