@@ -70,6 +70,30 @@ its site or an authorized partner offers a documented/observed handoff. Test the
 itinerary and live price; record failures and fall back to a clearly labeled search or
 homepage. PSS vendor names or a Google Flights redirect do not substitute for this test.
 
+### British Airways (BA) status — homepage fallback only
+
+- **Observed mixed-carrier behavior**: Selecting `BA` on a mixed `BA` + `AA` multi-city
+  itinerary resolves to `https://www.britishairways.com/` (`kind: 'homepage'`), which BA
+  geo-redirects to the visitor's regional homepage (for example,
+  `/travel/home/public/en_eg/`) with an empty search form. That is this app's homepage
+  fallback, not proof for or against a BA deep link.
+- **Why legacy `baUrl` (`processOffer?onds=…`) is not enabled**: `app.html` retains an unused
+  `/travel/book/public/en_gb/processOffer?onds=…` helper that only sends slice origin/destination
+  and date (`onds`), passenger counts (`ad`, `yad`, `ch`, `inf`), a single dominant cabin code
+  (`F`/`C`/`W`/`M`), `flex=LOWEST`, and `ond`. It drops flight numbers, marketing carriers,
+  booking classes, departure times, and connection airports, and has not been verified in a
+  live browser on `britishairways.com`.
+- **Manual test needed before coding any BA handoff**:
+  1. Test a **BA-only direct one-way** and **BA-only round-trip** on `britishairways.com` to
+     observe whether BA exposes a stable public search or flight-selection URL and what
+     parameters/landing step it actually reaches.
+  2. Test **BA connections and multi-city** (up to 6 O&D slices) and **passenger counts**
+     (adults, youths, children, lap infants).
+  3. Test **mixed BA + AA (oneworld)** itineraries to determine whether `britishairways.com`
+     can price/book AA-marketed non-UK slices or only BA-marketed/UK-touching journeys.
+  4. Record redacted landing URLs (strip session/cart/journey tokens) and screenshots without
+     submitting passenger PII or payment.
+
 ## Regression recovery
 
 Keep the original `unixMs` and `aaMetaUrl` functions in `app.html` unchanged; the app-wiring

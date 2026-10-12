@@ -57,6 +57,50 @@ test('AA selection can preserve all mixed-carrier legs via the original metasear
   assert.equal(resolveAirlineLink(itinerary,'DL',pax).url,null);
 });
 
+test('mixed BA/AA 6-leg itinerary: BA falls back to homepage while AA preserves all 6 legs in order', () => {
+  const itinerary=[
+    {carrier:'BA',num:'323',cls:'J',origin:'CDG',dest:'LHR',ymd:'2026-10-30',depH:7,depM:5},
+    {carrier:'AA',num:'731',cls:'I',origin:'LHR',dest:'CLT',ymd:'2026-10-30',depH:9,depM:55},
+    {carrier:'AA',num:'2615',cls:'I',origin:'CLT',dest:'MSY',ymd:'2026-10-30',depH:16,depM:53},
+    {carrier:'AA',num:'1917',cls:'I',origin:'MIA',dest:'STI',ymd:'2026-10-31',depH:12,depM:5},
+    {carrier:'AA',num:'1770',cls:'O',origin:'STI',dest:'MIA',ymd:'2027-01-21',depH:7,depM:20},
+    {carrier:'AA',num:'112',cls:'O',origin:'MIA',dest:'BCN',ymd:'2027-01-21',depH:16,depM:15},
+  ];
+  const ba=resolveAirlineLink(itinerary,'BA',pax);
+  assert.equal(ba.kind,'homepage');
+  assert.equal(ba.url,'https://www.britishairways.com/');
+  assert.equal(ba.label,'Visit British Airways website');
+  assert.match(ba.note,/Multiple marketing carriers/);
+  assert.match(ba.note,/opens a homepage, not a selected flight or live fare/);
+  assert.doesNotMatch(ba.url,/processOffer|onds=/);
+
+  let encodedSegments;
+  const aa=resolveAirlineLink(itinerary,'AA',pax,{
+    buildAAUrl:segments=>{encodedSegments=segments;return 'https://www.aa.com/goto/metasearch?ITEN=six-legs';},
+  });
+  assert.equal(aa.kind,'aa_handoff');
+  assert.deepEqual(encodedSegments.map(s=>`${s.carrier}${s.num}:${s.origin}-${s.dest}:${s.ymd}`),[
+    'BA323:CDG-LHR:2026-10-30',
+    'AA731:LHR-CLT:2026-10-30',
+    'AA2615:CLT-MSY:2026-10-30',
+    'AA1917:MIA-STI:2026-10-31',
+    'AA1770:STI-MIA:2027-01-21',
+    'AA112:MIA-BCN:2027-01-21',
+  ]);
+});
+
+test('BA-only itineraries also stay on the homepage fallback until a BA handoff is live-verified', () => {
+  const oneWay=[leg('BA','CDG','LHR','2026-10-30')];
+  const roundTrip=[leg('BA','CDG','LHR','2026-10-30'),leg('BA','LHR','CDG','2026-11-06')];
+  for(const trip of [oneWay,roundTrip]) {
+    const ba=resolveAirlineLink(trip,'BA',pax);
+    assert.equal(ba.kind,'homepage');
+    assert.equal(ba.url,'https://www.britishairways.com/');
+    assert.match(ba.note,/No tested airline-specific handoff is available yet/);
+    assert.doesNotMatch(ba.url,/processOffer|onds=/);
+  }
+});
+
 test('airlines without specific connectors use their own homepages, unknown carriers disable the link', () => {
   const fr=resolveAirlineLink([leg('FR')],'FR',pax);
   assert.equal(fr.kind,'homepage');

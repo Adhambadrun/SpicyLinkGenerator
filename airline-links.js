@@ -42,6 +42,9 @@ function searchUrl(code,segs,p) {
     if(type==='roundTrip')u.searchParams.set('r',segs[1].ymd);
     return u.href;
   }
+  // BA's legacy processOffer?onds=... builder in app.html omits flight numbers, carriers,
+  // booking classes, departure times, and connection airports, collapses mixed cabins, and
+  // has not been verified on britishairways.com. Keep BA on the homepage fallback until tested.
   return null;
 }
 
