@@ -35,6 +35,13 @@ Outcome codes: `STILL_PROCESSING_INTERSTITIAL`, `REDIRECTED_REGIONAL_HOMEPAGE`,
 `UNKNOWN_PROCESS_OFFER_STATE`. *Possible results* is deliberately not a pass — the
 `AA_ACCEPTANCE.md` benchmark still requires the passenger form with a matching fare.
 
+**Recorded result (owner-run, 2026-10-12, desktop Chrome, production):** cases A, B and C all
+end as `STILL_PROCESSING_INTERSTITIAL` — the "Give us a moment, we're calculating your price"
+page never resolves, for the one-way and the round-trip link alike. BA is therefore recorded
+`BLOCKED` in `AA_ACCEPTANCE.md` and the app emits **no** BA link (homepage fallback for every
+shape). Re-run this tool after any BA change; only a recorded run that reaches BA flight results
+and passes the passenger-form benchmark should move BA off the fallback.
+
 ## Privacy / redaction guarantees
 
 * No login, account, payment, passport or passenger data is entered or stored.
