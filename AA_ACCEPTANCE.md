@@ -70,29 +70,55 @@ its site or an authorized partner offers a documented/observed handoff. Test the
 itinerary and live price; record failures and fall back to a clearly labeled search or
 homepage. PSS vendor names or a Google Flights redirect do not substitute for this test.
 
-### British Airways (BA) status — unverified `processOffer` O&D search handoff
+### British Airways (BA) status — `processOffer` alive, shape-restricted after 2026-10-12 probes
 
 - **Previous homepage fallback**: Previously, selecting `BA` on a mixed `BA` + `AA` multi-city
   itinerary resolved to `https://www.britishairways.com/` (`kind: 'homepage'`), which BA
   geo-redirected to the visitor's regional homepage (for example,
   `/travel/home/public/en_eg/`) with an empty search form.
-- **Wired legacy `baUrl` (`processOffer?onds=…`)**: Selecting `BA` now delegates to `app.html`'s
-  legacy `/travel/book/public/en_gb/processOffer?onds=…` builder (`kind: 'search_unverified'`,
-  label `Open BA offer search`). It encodes only slice origin/destination and date (`onds`),
-  passenger counts (`ad`, `yad`, `ch`, `inf`), a single dominant cabin code (`F`/`C`/`W`/`M`),
-  `flex=LOWEST`, and `ond`. It does **not** pin flight numbers, marketing carriers, booking
-  classes, departure times, or intermediate connection airports.
-- **Manual browser verification needed on `britishairways.com`**:
-  1. Test **BA-only direct one-way** and **BA-only round-trip** with `Open BA offer search` to
-     observe whether `/travel/book/public/en_gb/processOffer?onds=…` loads BA flight results or
-     redirects back to `/travel/home/public/en_*`.
-  2. Test **BA connections and multi-city** (up to 6 legs / 3 O&D slices) and **passenger counts**
-     (adults, youths, children, lap infants).
-  3. Test **mixed BA + AA (oneworld)** itineraries (`CDG-MSY_2026-10-30,MIA-STI_2026-10-31,STI-BCN_2027-01-21`)
-     to determine whether `britishairways.com` accepts multi-city O&D slices containing non-UK
-     AA routes or requires a different BA URL format.
-  4. Record redacted landing URLs (strip session/cart/journey tokens) and screenshots without
-     submitting passenger PII or payment.
+- **Live probes, 2026-10-12 (HTTP GET, no JavaScript execution, no cookies, no login, no PII)**.
+  Four URLs were requested directly; all returned HTTP 200 with the page titled
+  **"British Airways - Processing Flight Selection"** ("Give us a moment, we're calculating
+  your price"):
+  1. BA-only one-way: `…/processOffer?onds=CDG-LHR_2026-10-30&ad=1&yad=0&ch=0&inf=0&cabin=M&flex=LOWEST&ond=1`
+  2. BA round-trip: `…/processOffer?onds=CDG-LHR_2026-10-30,LHR-CDG_2026-11-06&ad=1&yad=0&ch=0&inf=0&cabin=M&flex=LOWEST&ond=2`
+  3. Mixed-carrier 6-leg multi-city (the app's exact 3-slice output): `…/processOffer?onds=CDG-MSY_2026-10-30,MIA-STI_2026-10-31,STI-BCN_2027-01-21&ad=1&yad=0&ch=0&inf=0&cabin=C&flex=LOWEST&ond=3`
+  4. Invalid-airport control: `…/processOffer?onds=XXX-YYY_2026-10-30&ad=1&yad=0&ch=0&inf=0&cabin=M&flex=LOWEST&ond=1`
+
+  **Conclusion: `processOffer` is NOT retired/broken** — none of the probes returned a 404, an
+  error page, or an immediate server-side redirect to `/travel/home/public/en_*`, even for
+  invalid input. The working one-way/round-trip hypothesis (not the full-revert hypothesis)
+  therefore applies. However, the "calculating your price" step is client-side JavaScript:
+  without executing it, the *final* landing page (flight results vs. error vs. an empty regional
+  homepage) is unverifiable for **every** shape — the identical interstitial is returned even
+  for the invalid-airport control, so the interstitial itself is not evidence of acceptance.
+  These probes contain only public O&D/date search input and were made without cookies;
+  no transient identifiers (`search-journey-id`, `cid`), session cookies, or PII were
+  requested, observed, stored, or committed.
+- **Shape restriction (2026-10-12)**: Because multi-city acceptance cannot be proven,
+  `resolveAirlineLink` now gates BA on itinerary shape *before* calling any O&D builder
+  (including the legacy `baUrl` injected by `app.html`), and `buildBAProcessOfferUrl` refuses
+  the same shapes defensively. Links are emitted only for one-way and round-trip shapes —
+  at most 2 O&D slices (`baSliceIndex` starts a new slice on a route break or a >24 h
+  ground gap). Itineraries needing 3+ O&D slices, including the mixed BA/AA 6-leg trip above,
+  resolve to a clearly labeled BA homepage fallback whose note states the one-way/round-trip
+  limitation instead of emitting an unverifiable multi-city `processOffer` URL. Supported
+  shapes remain `kind: 'search_unverified'` (label `Open BA offer search`) and encode only
+  slice origin/destination and date (`onds`), passenger counts (`ad`, `yad`, `ch`, `inf`),
+  a single dominant cabin code (`F`/`C`/`W`/`M`), `flex=LOWEST`, and `ond` — never flight
+  numbers, marketing carriers, booking classes, departure times, or connection airports.
+- **Manual browser verification still needed on `britishairways.com`**:
+  1. In a real (JavaScript-enabled) browser, run **BA-only one-way** and **BA-only round-trip**
+     through `Open BA offer search` and record what the "Processing Flight Selection" page lands
+     on: flight results (record the benchmark outcome codes, up to the passenger-form checks
+     above), an error, or a redirect to `/travel/home/public/en_*`. This decides whether BA can
+     ever be promoted from `search_unverified`.
+  2. Confirm the multi-city restriction is still necessary by attempting the 3-slice mixed
+     BA/AA URL once in a real browser; record whether it renders results (requires re-evaluating
+     the gate) or fails (restriction confirmed).
+  3. Test **passenger counts** (adults, youths, children, lap infants) on a supported shape.
+  4. Record redacted landing URLs only (strip session/cart/journey tokens) and screenshots
+     without submitting passenger PII or payment. Do not commit URLs containing live tokens.
 
 ## Regression recovery
 

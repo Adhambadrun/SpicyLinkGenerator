@@ -105,7 +105,7 @@ test('mixed itinerary: selecting AA generates and copies the original URL with e
   assert.match(elements.get('link-note').textContent,/Multiple marketing/);
 });
 
-test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, wires BA processOffer search, and preserves all 6 legs for AA', async () => {
+test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, BA falls back clearly for 3-slice multi-city, and all 6 legs are preserved for AA', async () => {
   const gds=[
     '1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E',
     '2 AA 731I 30OCT F LHRCLT*SS1   955A  250P /DCAA /E',
@@ -114,12 +114,13 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, wires B
     '5 AA1770O 21JAN Q STIMIA*SS1   720A  846A /DCAA /E',
     '6 AA 112O 21JAN Q MIABCN*SS1   415P  705A  22JAN F /DCAA /E',
   ].join('\n');
-  const expectedBA='https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-MSY_2026-10-30,MIA-STI_2026-10-31,STI-BCN_2027-01-21&ad=1&yad=0&ch=0&inf=0&cabin=C&flex=LOWEST&ond=3';
 
   for (const nowIso of ['2026-10-12T12:00:00Z', '2026-01-10T12:00:00Z']) {
     const {elements,window,opened,copied}=await app({nowIso});
     elements.get('gds').value=gds;
-    // Leg 1 is BA, so BA is selected initially and resolves to the legacy BA processOffer URL.
+    // Leg 1 is BA, so BA is selected initially. 6 legs collapse to 3 O&D slices
+    // (CDG-MSY, MIA-STI, STI-BCN), which BA's offer search cannot prove it accepts
+    // (AA_ACCEPTANCE.md), so the app falls back to the clearly labeled BA homepage.
     await window.openSelectedLink();
     await window.copyLink();
     assert.equal(elements.get('warn').textContent,'');
@@ -135,10 +136,12 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, wires B
       '  AA112     O ECONOMY          MIA->BCN  2027-01-21  16:15 -> 07:05 (+1)  MARRIED',
     ]);
 
-    assert.equal(opened[0],expectedBA);
-    assert.equal(copied[0],expectedBA);
-    assert.equal(elements.get('generate-link').textContent,'Open BA offer search');
-    assert.match(elements.get('link-note').textContent,/NOT preselected/);
+    assert.equal(opened[0],'https://www.britishairways.com/');
+    assert.equal(copied[0],'https://www.britishairways.com/');
+    assert.equal(elements.get('generate-link').textContent,'Visit British Airways website');
+    assert.match(elements.get('link-note').textContent,/one-way and round-trip only/);
+    assert.match(elements.get('link-note').textContent,/3 O&D slices/);
+    assert.match(elements.get('link-note').textContent,/not a selected flight/);
 
     // Switch dropdown from BA (option 0) to AA (option 1).
     const menu=elements.get('airline-picker').children[0].children[1];
@@ -158,4 +161,18 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, wires B
     assert.match(iten,/^DIRECT,0,US,multi,4,A1S0C0I0Y0L0,0,CDG,0,LHR,/);
     assert.match(iten,/#BA\|323\|J\|CDG\|LHR\|1793340300000\|0#AA\|731\|I\|LHR\|CLT\|1793354100000\|1#AA\|2615\|I\|CLT\|MSY\|1793397180000\|2#AA\|1917\|I\|MIA\|STI\|1793466300000\|3#AA\|1770\|O\|STI\|MIA\|1800516000000\|4#AA\|112\|O\|MIA\|BCN\|1800566100000\|5$/);
   }
+});
+
+test('1-leg BA-only GDS itinerary resolves to the BA processOffer offer search (unverified processing page is live; results unverified)', async () => {
+  const {elements,window,opened,copied}=await app();
+  elements.get('gds').value='1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E';
+  await window.openSelectedLink();
+  await window.copyLink();
+  const expected='https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-LHR_2026-10-30&ad=1&yad=0&ch=0&inf=0&cabin=C&flex=LOWEST&ond=1';
+  assert.deepEqual(opened,[expected]);
+  assert.deepEqual(copied,[expected]);
+  assert.equal(elements.get('generate-link').textContent,'Open BA offer search');
+  assert.match(elements.get('link-note').textContent,/NOT preselected/);
+  assert.match(elements.get('link-note').textContent,/no live fare is verified/);
+  assert.doesNotMatch(opened[0],/search-journey-id|cid=|passenger-ui/i);
 });

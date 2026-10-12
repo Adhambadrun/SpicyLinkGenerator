@@ -29,8 +29,13 @@ URL; Copy copies the same URL. The original URL format is unchanged, but its pre
 verify flight selection, availability or price. Transient post-redirect AA parameters (such as
 `/airfare-sales/ui/passenger-ui/` query IDs) are session-specific and are never stored in code,
 tests or docs. For BA-selected itineraries, Generate and Copy use the repository's legacy
-`baUrl` (`/travel/book/public/en_gb/processOffer?onds=…`) O&D search builder, clearly labeled as
-`search_unverified` because it encodes only slice origin/destination, dates, dominant cabin and
+`baUrl` (`/travel/book/public/en_gb/processOffer?onds=…`) O&D search builder — but only for
+one-way and round-trip shapes (at most 2 O&D slices). Live probes on 2026-10-12 showed the
+endpoint answers every input, valid or not, with the same "Processing Flight Selection" page,
+so multi-city acceptance is unprovable: 3+ O&D-slice itineraries fall back to a clearly labeled
+BA homepage with the reason stated (see [AA_ACCEPTANCE.md](AA_ACCEPTANCE.md)). Supported shapes
+remain clearly labeled as
+`search_unverified` because the URL encodes only slice origin/destination, dates, dominant cabin and
 passenger counts (flight numbers and non-BA legs are **not** preselected). Delta and United
 direct one-way/round-trip itineraries also have *unverified search prefills* (not flight
 selection or checkout). All other carriers use their own directory homepage. No fabricated price
