@@ -10,7 +10,10 @@ Made by Adham Badran
 
 The app accepts supported Sabre/Amadeus-style GDS text **or** Matrix-style JSON
 (`itinerary.slices[].segments[]` with full ISO timestamps, airport codes and booking classes).
-Imported JSON is preserved when copied. Raw GDS text does **not** contain enough data to
+GDS row order is preserved; if a later row would depart before the preceding flight arrives
+(using known airport time zones), its date is rolled forward and a warning asks you to verify
+that inference against the original GDS. Imported JSON is preserved when copied. Raw GDS text
+does **not** contain enough data to
 construct a real priced offer: its exported fare basis, taxes, fare construction and price are
 synthetic illustrations, **not** a live quote or a verified BookWithMatrix booking. Outbound
 links are experimental search handoffs; no airline payment or passenger prefill is promised.
