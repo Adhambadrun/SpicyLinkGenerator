@@ -114,13 +114,38 @@ the dead end again. Only a brand-new tab gets a fresh login form.
 
 ---
 
+## Look and feel — the SpicyTerminal house style
+
+This tool is dressed as a sibling of **SpicyTerminal**: one black terminal window, one
+monospace voice, no decoration that is not information.
+
+- **Palette** — SpicyTerminal's own tokens: `#05080b` background, `#0a0f14` panes, `#17222b`
+  hairline frames, terminal green `#53d977` for status and `#51e07c` for output, red `#e2574b`
+  reserved for the one button that does something, amber `#f0a35c` reserved for "check this".
+- **Chrome** — a wordmark masthead with `made by Adham Badran` on the right (SpicyTerminal's
+  header), panes with a static two-pixel hairline across the top, `10px`/`2px`-tracked
+  uppercase pane labels, flat `4px`-radius buttons, and a dim status row carrying the byline
+  and the quiet links.
+- **Wordmark** — `assets/wordmark_alpha.png` (also inlined in both pages): *Spicy* in the house
+  red, *LINK GENERATOR* in white, on transparency — the same two-tone split as SpicyTerminal's.
+- **Motion** — none. No keyframes, no transitions: a value changes, nothing slides, the
+  interface never animates (SpicyTerminal's rule, kept here).
+- **`deploy-kit/`** carries the same stylesheet, so the manual-upload path can never ship a
+  differently-styled page.
+
+Only the visuals moved. Element ids, the sign-in flow, the parsers and the handoff logic are
+untouched — `npm test` covers exactly what it did before.
+
 ## Project layout
 
 ```
 spicy-link-generator/
 ├── index.html          ← login page (2FA gate: email → code)
 ├── app.html            ← the actual tool (redirects to login if no session)
-├── logo.png            ← app logo
+├── logo.png            ← app logo (favicon; 64×64)
+├── assets/
+│   ├── wordmark_alpha.png  ← transparent wordmark used in the masthead and sign-in panel
+│   └── airline-logos/      ← bundled carrier logos (IATA monogram fallback when missing)
 ├── api/
 │   ├── request-code.js ← POST  validate domain → generate code → email the approver (Resend)
 │   ├── verify.js       ← POST  check code → set session cookie
