@@ -191,12 +191,31 @@ renders instantly, no spinner, no geo-redirect to an empty widget):
    browser; they remain third-party `search_unverified` alternatives, with no fare claimed.
    Test success is not a substitute for browser evidence.
 
-**Sandbox limitation for this turn (2026-10-12).** No new `--capture`, `M3`, `--matrix` or
-`--legacy` browser result is recorded here. The checkout has no Playwright/Chromium install,
-and this sandbox cannot reach ba.com; therefore no BA result, captured URL or session-hypothesis
-verdict was produced. The existing `BLOCKED` / `SEARCH_ONLY` outcomes above remain unchanged;
-this is not a new browser observation. Run the commands below on a machine with a real browser
-and internet access, then paste only the redacted report results.
+**Sandbox limitation for this turn (2026-10-12, Africa/Cairo).** Re-verified via the
+agent's page-fetch proxy (rendering fetch, JS executed, no login, no cookies, no PII):
+`flightSearch` still renders the empty multi-city form and ignores `onds/ad/yad/ch/inf/cabin/flex/ond`
+query params, and `processOffer?onds=CDG-LHR_2026-10-30&...` still returns
+`British Airways - Processing Flight Selection` (“Give us a moment, we're calculating your price”)
+— byte-identical to rows 1–5 above. This is rendering-only evidence; it cannot click Search, so
+no captured prefill URL or session-hypothesis verdict was produced. No new `--capture`, `M3`,
+`--matrix` or `--legacy` **real-browser** run is recorded here: this sandbox cannot reach ba.com
+directly (`curl https://www.britishairways.com/` fails `SSL_ERROR_SYSCALL`; outbound is limited to
+`registry.npmjs.org` / `pypi.org` / `github.com`), `npm install playwright` succeeds but
+`npx playwright install chromium` fails (`Download failure … ECONNRESET` from
+`playwright-verizon.azureedge.net`; `apt` deps also unreachable), and attempts to install the
+GitHub workflow were rejected — `git push` of `.github/workflows/ba-live-probe.yml` was refused
+with `refusing to allow a GitHub App to create or update workflow '.github/workflows/ba-live-probe.yml'
+without 'workflows' permission`, and `gh api …/contents/.github/workflows/ba-live-probe.yml` returned
+`403 Resource not accessible by integration`. The owner was asked (A) to manually copy
+`tools/gh-workflow-ba-live-probe.yml` to `.github/workflows/ba-live-probe.yml` (changing the Run
+line to `node tools/ba-live-probe.mjs --capture --matrix --legacy --seconds=150`) via the GitHub
+web UI and trigger it via Actions → `BA live browser probe` → `Run workflow`, then download
+`artifacts/ba-live-probe-report.json` + screenshots, and (B) to run the 7 candidate links plus
+the capture test in desktop Chrome incognito (logged out) and report final page, seconds waited,
+and DevTools → Network failures (status 403/429/5xx, URL path only, no cookies/tokens), plus whether
+typing the same search into BA's form reaches results and what URL BA shows. Until a real-browser
+run reaches BA flight results and passes the passenger-form benchmark, the existing `BLOCKED` /
+`SEARCH_ONLY` outcomes above remain unchanged; this turn adds no new browser observation.
 
 **How to re-test in one command (any machine with a normal browser and internet access)**
 
