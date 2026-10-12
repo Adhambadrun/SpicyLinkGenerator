@@ -3,10 +3,11 @@
 **Status: NOT LIVE VERIFIED in this environment.** The sandbox cannot connect to AA.com.
 `npm test` checks our parsing, timestamp conversion, URL construction and UI wiring; it
 cannot prove that AA accepts a link, that a seat exists or that a fare is available.
-The repository's historical `/goto/metasearch?ITEN=…` link is preserved as the
-**AA-only Generate action**. Its `0.00` field is a protocol placeholder,
-not the fare. The user reports that this method works; that is not a repeatable
-verification result until the checks below are recorded.
+The repository's historical `/goto/metasearch?ITEN=…` URL is used whenever AA is selected,
+including mixed-carrier itineraries, and its payload contains every parsed leg. Generate copies
+and opens it; Copy copies the same URL. Non-AA-marketed flights may not be pinned by AA. Its
+`0.00` field is a protocol placeholder, not the fare. The user reports that this method works;
+that is not a repeatable verification result until the checks below are recorded.
 
 ## Definition of pass
 
@@ -15,7 +16,7 @@ All of these must be true *in the same fresh browser run*, without completing a 
 1. Spicy parses **every** leg and the passenger mix; compare flight number, marketing
    carrier, airports, *local* departure date/time, and class against the original GDS/Matrix
    itinerary. No invented fare basis or price is treated as the source quote.
-2. Click **Open AA exact-flight link**. Final browser address belongs to `aa.com`
+2. Click **Open AA metasearch link**. Final browser address belongs to `aa.com`
    (not another seller); no blocked/error/homepage fallback. Record the landing step.
 3. The **selected flights** are in the AA itinerary/cart, not merely displayed somewhere
    in search results; compare every leg, dates, cabin/brand, and passenger counts.
@@ -53,8 +54,8 @@ passenger count, or a generic search page is a failure for this benchmark.
 | AA→AA connection | Both legs together; no accidental multi-city repricing | Not tested |
 | Multi-city AA | All legs, no dropped leg; exact original fare if offered | Not tested |
 | 2 adults + child / lap infant | All passengers; airline's constraints respected | Not tested |
-| Codeshare / non-AA marketing | Exact AA handoff blocked; use directory fallback | Offline guard tested |
-| DST transition / unknown airport | Correct absolute departure instant or safe refusal | Offline guard tested |
+| Codeshare / non-AA marketing | Original URL contains every leg; AA may not pin non-AA flights | Not live tested |
+| DST transition / unknown airport | Legacy airport-offset conversion must be checked against each local departure | Not live tested |
 | Sold-out, expired or repriced offer | Explicit not-available/changed, never mark as pass | Not tested |
 | New tab / airline logged out | Record difference in landing and fare | Not tested |
 
@@ -71,8 +72,8 @@ homepage. PSS vendor names or a Google Flights redirect do not substitute for th
 
 ## Regression recovery
 
-Keep `aa-handoff.js` separate from other airline adapters. The golden checksum in
-`test/aa-handoff.test.mjs` pins its generated URL envelope. If AA stops landing correctly,
-compare a *redacted* failing case to the last passing manual run and the golden output.
-Do not silently replace the AA handoff with a different carrier's search builder.
-The homepage remains a clearly labeled fallback when an exact AA URL cannot be safely made.
+Keep the original `unixMs` and `aaMetaUrl` functions in `app.html` unchanged; the app-wiring
+tests pin their original payload for AA-only and mixed-carrier trips. The golden checksum in
+`test/aa-handoff.test.mjs` also protects the standalone AA URL envelope. If AA stops landing
+correctly, compare a *redacted* failing case to the last passing manual run and the expected
+payload. Do not silently replace the AA handoff with a different carrier's search builder.

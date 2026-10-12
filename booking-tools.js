@@ -1,5 +1,4 @@
-// Browser + Node helpers for imported Matrix-style itinerary JSON and quote freshness.
-// This module makes NO inventory request. A timestamp measures age, not availability.
+// Browser + Node helpers for importing supported Matrix-style itinerary JSON.
 const code = (value, length) => {
   const s = typeof value === 'string' ? value : value?.code;
   return typeof s === 'string' && new RegExp(`^[A-Z0-9]{${length}}$`).test(s.toUpperCase()) ? s.toUpperCase() : null;
@@ -54,19 +53,4 @@ export function parseMatrixInput(input) {
   }
   if (segments.length > 24) throw new Error('More than 24 segments: review this itinerary manually.');
   return { segments, original: data };
-}
-
-/** Advisory only: no generic PSS TTL exists and we have not queried live inventory. */
-export function assessQuote(quotedAt, now = Date.now(), expiresAt = null) {
-  if (!quotedAt) return { state: 'unknown', ageMinutes: null, message: 'No quote time supplied. Fare and availability not checked.' };
-  const time = Date.parse(quotedAt);
-  if (!Number.isFinite(time) || time > now + 60000)
-    return { state: 'unknown', ageMinutes: null, message: 'Quote time is invalid or in the future. Fare not checked.' };
-  const ageMinutes = Math.floor(Math.max(0, now - time) / 60000);
-  const expiry = expiresAt ? Date.parse(expiresAt) : NaN;
-  if (Number.isFinite(expiry) && now >= expiry)
-    return { state: 'expired', ageMinutes, message: `Quote is ${ageMinutes} min old; its supplied expiration has passed. Reprice with the provider.` };
-  if (ageMinutes >= 15)
-    return { state: 'recheck', ageMinutes, message: `Quote is ${ageMinutes} min old. Reprice before booking; this is not a live availability check.` };
-  return { state: 'recent', ageMinutes, message: `Quote is ${ageMinutes} min old. Availability and price still need a live recheck.` };
 }

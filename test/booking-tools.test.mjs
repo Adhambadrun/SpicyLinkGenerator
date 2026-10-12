@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMatrixInput, assessQuote } from '../booking-tools.js';
+import { parseMatrixInput } from '../booking-tools.js';
 
 const segment = (flight = '401') => ({
   carrier: { code: 'LH' }, flight: { number: flight },
@@ -30,17 +30,4 @@ test('rejects missing legs, naive timestamps, unknown classes and bad JSON', () 
   assert.throws(() => parseMatrixInput({ itinerary: { slices: [{ segments: [] }] } }), /no segments/);
   assert.throws(() => parseMatrixInput({ slices: [{ segments: [segment(), { ...segment(), bookingInfos: [] }] }] }), /segment 2/);
   assert.throws(() => parseMatrixInput({ slices: [{ segments: [{ ...segment(), departure: '2026-11-12T15:45:00' }] }] }), /explicit UTC offsets/);
-});
-
-test('quote age is not presented as inventory validation or a fabricated TTL', () => {
-  const now = Date.parse('2026-10-12T12:00:00Z');
-  assert.equal(assessQuote('', now).state, 'unknown');
-  assert.equal(assessQuote('invalid', now).state, 'unknown');
-  assert.equal(assessQuote('2026-10-12T12:10:00Z', now).state, 'unknown');
-  const recent = assessQuote('2026-10-12T11:58:00Z', now);
-  assert.equal(recent.state, 'recent');
-  assert.equal(recent.ageMinutes, 2);
-  assert.match(recent.message, /live recheck/);
-  assert.equal(assessQuote('2026-10-12T11:30:00Z', now).state, 'recheck');
-  assert.equal(assessQuote('2026-10-12T11:58:00Z', now, '2026-10-12T11:59:00Z').state, 'expired');
 });

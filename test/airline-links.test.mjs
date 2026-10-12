@@ -40,12 +40,18 @@ test('round-trip search keeps both dates; connections never collapse into a wron
   assert.equal(new URL(connection.url).search,'');
 });
 
-test('multiple airlines always use selected carrier homepage, not an invented joint cart', () => {
+test('AA selection can preserve all mixed-carrier legs via the original metasearch builder', () => {
   const itinerary=[leg('AA'),leg('LH','LAX','FRA')];
-  const aa=resolveAirlineLink(itinerary,'AA',pax);
+  const originalUrl='https://www.aa.com/goto/metasearch?ITEN=historical-payload';
+  let encodedSegments;
+  const aa=resolveAirlineLink(itinerary,'AA',pax,{buildAAUrl:segments=>{encodedSegments=segments;return originalUrl;}});
   const lh=resolveAirlineLink(itinerary,'LH',pax);
-  assert.equal(aa.kind,'homepage');assert.equal(lh.kind,'homepage');
-  assert.equal(new URL(aa.url).hostname,'www.aa.com');
+  assert.equal(aa.kind,'aa_handoff');
+  assert.equal(aa.url,originalUrl);
+  assert.deepEqual(encodedSegments,itinerary);
+  assert.match(aa.note,/every itinerary leg/);
+  assert.match(aa.note,/non-AA-marketed flights may not be pinned/);
+  assert.equal(lh.kind,'homepage');
   assert.equal(new URL(lh.url).hostname,'www.lufthansa.com');
   assert.match(lh.note,/Multiple marketing carriers/);
   assert.equal(resolveAirlineLink(itinerary,'DL',pax).url,null);
