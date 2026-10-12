@@ -28,7 +28,9 @@ export default async function handler(req, res) {
   // revoked and unsafe to reuse.
   if (!debugMode) {
     const configurationError = missingMailConfig({ apiKey, fromEmail });
-    if (configurationError) return res.status(500).json({ error: configurationError });
+    // setupError tells the login page this is the deployment's problem to fix,
+    // not something the visitor typed.
+    if (configurationError) return res.status(500).json({ error: configurationError, setupError: true });
   }
 
   const { email } = body;

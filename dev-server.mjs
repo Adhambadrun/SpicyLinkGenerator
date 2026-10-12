@@ -13,7 +13,7 @@ import { readFile } from 'fs/promises';
 import { join, extname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { handleRequestCode, handleVerify, handleSession, DEFAULT_AUTH_SECRET, warnIfDefaultSecret } from './lib/core.js';
-import { mailConfig, sendLoginCodeEmail } from './lib/mailer.js';
+import { mailConfig, sendLoginCodeEmail, isTestSender, senderSetupHint } from './lib/mailer.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -100,6 +100,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === '/api/health') {
       const config = mailConfig();
+      const testSender = isTestSender(config.fromEmail);
       return json(200, {
         ok: true,
         app: 'Spicy Link Generator',
@@ -107,6 +108,8 @@ const server = http.createServer(async (req, res) => {
         otpRecipient: 'the address requesting the code',
         mailConfigured: Boolean(config.apiKey),
         mailFrom: config.fromEmail,
+        mailCanSendToUsers: Boolean(config.apiKey) && Boolean(config.fromEmail) && !testSender,
+        ...(testSender ? { setupHint: senderSetupHint(config.fromEmail) } : {}),
       });
     }
   } catch (e) {
@@ -115,6 +118,20 @@ const server = http.createServer(async (req, res) => {
 
   // static files (kept inside the project directory)
   const rel = path === '/' ? '/index.html' : path;
+  // This server is also exposed as a public preview, so never hand out the things that
+  // are not part of the site: .env (RESEND_API_KEY / AUTH_SECRET), dotfiles, the source
+  // folders, the test suite or the repo archives. Without this, /.env served real secrets.
+  const BLOCKED = [
+    /(^|\/)\./,                        // .env, .env.local, .git, .gitignore …
+    /(^|\/)node_modules(\/|$)/i,
+    /(^|\/)(api|lib|test)(\/|$)/i,     // served through the handlers above, never as files
+    /(^|\/)(dev-server\.mjs|vercel\.json|package(-lock)?\.json)$/i,
+    /\.(zip|tar|gz|log|bak|pem|key)$/i,
+  ];
+  if (BLOCKED.some((re) => re.test(decodeURIComponent(rel)))) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    return res.end('Not found');
+  }
   const file = resolve(__dirname, '.' + decodeURIComponent(rel));
   if (!file.startsWith(resolve(__dirname))) {
     res.writeHead(403, { 'Content-Type': 'text/plain' });
@@ -134,4 +151,7 @@ server.listen(PORT, HOST, () => {
   console.log(`Spicy Link Generator (2FA) dev server → http://localhost:${PORT}`);
   console.log(`Sign-in codes go to the address that asks for them · sender: ${STARTUP_MAIL_CONFIG.fromEmail}`);
   console.log(`Email provider: ${STARTUP_MAIL_CONFIG.apiKey ? 'Resend configured' : 'not configured (local code will be shown)'}`);
+  if (isTestSender(STARTUP_MAIL_CONFIG.fromEmail)) {
+    console.warn(`[mail] ${senderSetupHint(STARTUP_MAIL_CONFIG.fromEmail)}`);
+  }
 });

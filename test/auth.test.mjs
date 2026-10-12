@@ -193,3 +193,25 @@ test('handleSession refuses a missing or forged cookie', () => {
   assert.equal(handleSession({ cookieHeader: '', secret: SECRET }).status, 401);
   assert.equal(handleSession({ cookieHeader: 'slg_session=nonsense', secret: SECRET }).status, 401);
 });
+
+test('handleRequestCode flags sender/configuration failures so the login page can explain them', async () => {
+  const configFailure = await handleRequestCode({
+    email: 'agent@travelbusinessclass.com',
+    secret: SECRET,
+    sendEmail: async () => ({
+      ok: false,
+      setup: true,
+      error: 'The sign-in email is still being sent from Resend’s test address (onboarding@resend.dev) …',
+    }),
+  });
+  assert.equal(configFailure.status, 502);
+  assert.equal(configFailure.json.setupError, true);
+
+  const transientFailure = await handleRequestCode({
+    email: 'agent@travelbusinessclass.com',
+    secret: SECRET,
+    sendEmail: async () => ({ ok: false, error: 'Email send failed — socket hang up', setup: false }),
+  });
+  assert.equal(transientFailure.status, 502);
+  assert.equal(transientFailure.json.setupError, false);
+});
