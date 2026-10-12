@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBAProcessOfferUrl, gfSearchGroups, ondSlices, ondSlicesWithCabin, resolveAirlineLink } from '../airline-links.js';
+import { buildBAProcessOfferUrl, gfSearchGroup, itinerarySearchCabin, ondSlices, resolveAirlineLink } from '../airline-links.js';
 import { buildAAMetasearchUrl } from '../aa-handoff.js';
 
 const BA_SEARCH_FORM='https://www.britishairways.com/travel/book/public/en_gb/flightSearch';
@@ -131,7 +131,11 @@ test('BA opens its own (empty) search form for every shape — never the BLOCKED
     assert.match(result.note,/ignores URL parameters/);
     assert.match(result.note,/opens EMPTY/);
     assert.match(result.note,/No flight is selected and no fare is shown or claimed/);
+    // Next step is the user's: submit BA's search, pick a result there if BA returns one.
+    assert.match(result.note,/submit BA’s search yourself and, if BA returns results, select a flight there/);
+    assert.match(result.note,/cannot open BA’s passenger details or payment directly/);
     assert.doesNotMatch(result.note,/£|\$\d|\d USD|guaranteed fare|booked/i);
+    assert.doesNotMatch(result.note,/reached (BA )?(flight )?results|results (are|were) reached|verified (results|fare|booking|passenger)/i);
     // GUARD: no unverified or recorded-BLOCKED BA link may ever reach the UI.
     assert.doesNotMatch(result.url,/processOffer|search-journey-id|[?&]cid=|passenger-ui|britishairways\.com\/$/i);
   }
@@ -180,27 +184,30 @@ test('ondSlices collapses connections so the third-party alternative is never a 
   assert.deepEqual(ondSlices([{origin:'CDG',dest:'LHR',ymd:'30OCT'}]),[]);
 });
 
-test('cabin-annotated O&D slices produce separate Google Flights searches per cabin', () => {
+test('one Google Flights search covers every O&D slice at the most common cabin, ties to the higher cabin', () => {
   const mixedConnection=[
     {...leg('BA','CDG','LHR','2026-10-30'),cls:'J'},
     {...leg('AA','LHR','JFK','2026-10-30'),cls:'O'},
     {...leg('AA','JFK','CDG','2026-11-06'),cls:'O'},
   ];
-  const slices=ondSlicesWithCabin(mixedConnection);
-  assert.deepEqual(slices,[
-    {origin:'CDG',dest:'JFK',ymd:'2026-10-30',cabin:'BUSINESS'},
-    {origin:'CDG',dest:'JFK',ymd:'2026-10-30',cabin:'COACH'},
-    {origin:'JFK',dest:'CDG',ymd:'2026-11-06',cabin:'COACH'},
-  ]);
-  const expected=[
-    {cabin:'BUSINESS',slices:[{origin:'CDG',dest:'JFK',ymd:'2026-10-30'}]},
-    {cabin:'COACH',slices:[
-      {origin:'CDG',dest:'JFK',ymd:'2026-10-30'},
-      {origin:'JFK',dest:'CDG',ymd:'2026-11-06'},
-    ]},
-  ];
-  assert.deepEqual(gfSearchGroups(slices),expected);
-  assert.deepEqual(gfSearchGroups(mixedConnection),expected,'raw segments may be grouped directly too');
-  assert.deepEqual(ondSlicesWithCabin([]),[]);
-  assert.deepEqual(gfSearchGroups([]),[]);
+  // 1 business leg vs 2 economy legs: economy is the most common cabin.
+  assert.equal(itinerarySearchCabin(mixedConnection),'COACH');
+  // ONE group, every collapsed slice — never one search per cabin.
+  assert.deepEqual(gfSearchGroup(mixedConnection),{cabin:'COACH',slices:[
+    {origin:'CDG',dest:'JFK',ymd:'2026-10-30'},
+    {origin:'JFK',dest:'CDG',ymd:'2026-11-06'},
+  ]});
+  assert.deepEqual(gfSearchGroup(mixedConnection).slices,ondSlices(mixedConnection));
+  // Ties favour the higher cabin: FIRST > BUSINESS > PREMIUM-COACH > COACH.
+  const tie=(a,b)=>[{...leg('BA','CDG','LHR','2026-10-30'),cls:a},{...leg('BA','LHR','CDG','2026-11-06'),cls:b}];
+  assert.equal(itinerarySearchCabin(tie('J','O')),'BUSINESS');
+  assert.equal(itinerarySearchCabin(tie('O','J')),'BUSINESS');
+  assert.equal(itinerarySearchCabin(tie('F','J')),'FIRST');
+  assert.equal(itinerarySearchCabin(tie('W','Y')),'PREMIUM-COACH');
+  assert.equal(itinerarySearchCabin(tie('Y','Y')),'COACH');
+  assert.deepEqual(gfSearchGroup(tie('J','O')).cabin,'BUSINESS');
+  // Nothing parsed -> no fabricated alternative search.
+  assert.equal(itinerarySearchCabin([]),null);
+  assert.equal(gfSearchGroup([]),null);
+  assert.equal(gfSearchGroup([{origin:'cdg',dest:'LHR',ymd:'2026-10-30'}]),null);
 });

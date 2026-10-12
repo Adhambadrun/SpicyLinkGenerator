@@ -42,11 +42,14 @@ cabinclass/adult`), while `/travel/book/public/en_gb` with or without params red
 `/processing` payment interstitial. The form therefore opens **empty**, and the note spells out
 exactly what to type — e.g. *“Fill “Flight 1” with CDG→LHR on 2026-10-30 (business, 1 adult) and
 remove the other rows.”*, or one row per O&D slice for multi-city, with *“No flight is selected
-and no fare is shown or claimed here.”* Beside it, one clearly labeled button per represented
-cabin offers a **pre-filled Google Flights search (not BA)** for only the matching O&D slices.
-Each URL carries one cabin (Google Flights seat class in TFS field 9); a mixed-cabin itinerary
-never becomes one mixed-cabin search. These are third-party searches, never airline bookings or
-fares. The O&D slice gate and the legacy
+and no fare is shown or claimed here.”* The note also tells the user to submit BA's search and,
+if BA returns results, select a flight there — the link cannot open BA's passenger details or
+payment directly. Beside it, **one** clearly labeled button, **“Pre-filled Google Flights (not
+BA)”**, opens a single Google Flights search covering every collapsed O&D slice at the
+itinerary's most common cabin (ties go to the higher cabin; Google Flights seat class in TFS
+field 9). Google Flights takes one cabin per search, so a mixed-cabin itinerary cannot be
+preserved leg by leg, and the note says so. It is an unverified third-party search, never an
+airline booking or fare. The O&D slice gate and the legacy
 `buildBAProcessOfferUrl` survive only for manual re-probing via `tools/ba-live-probe.mjs` (which
 drives a real browser, can fill BA's form by hand to capture the URL BA itself produces, and
 redacts transient tokens); nothing in the app calls a BA builder any more, and

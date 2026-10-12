@@ -38,14 +38,23 @@ function segmentCabin(carrier,cls) {
   if(m){if(m.first.includes(c))return 'FIRST';if(m.business.includes(c))return 'BUSINESS';if(m.premium.includes(c))return 'PREMIUM-COACH';return 'COACH';}
   if('FAP'.includes(c))return 'FIRST';if('JCDIZR'.includes(c))return 'BUSINESS';if('WE'.includes(c))return 'PREMIUM-COACH';return 'COACH';
 }
-function baCabinCode(segs) {
+const CABIN_RANK={FIRST:3,BUSINESS:2,'PREMIUM-COACH':1,COACH:0};
+/** The itinerary's most common cabin (segmentCabin tallied over every leg); a tie goes to
+ *  the HIGHER cabin (FIRST > BUSINESS > PREMIUM-COACH > COACH). Used for BA's typed summary
+ *  and for the single Google Flights alternative, which accepts one cabin per search. */
+export function itinerarySearchCabin(segs) {
+  if(!Array.isArray(segs)||!segs.length)return null;
   const tally={};
-  for(const s of segs){const cab=segmentCabin(s.carrier,s.cls);tally[cab]=(tally[cab]||0)+1;}
+  for(const s of segs){const cab=segmentCabin(s?.carrier,s?.cls);tally[cab]=(tally[cab]||0)+1;}
   let best='COACH',bestCount=-1,bestRank=-1;
   for(const cab of Object.keys(tally)){
-    const rank=cab==='FIRST'?3:cab==='BUSINESS'?2:cab==='PREMIUM-COACH'?1:0;
+    const rank=CABIN_RANK[cab];
     if(tally[cab]>bestCount||(tally[cab]===bestCount&&rank>bestRank)){bestCount=tally[cab];bestRank=rank;best=cab;}
   }
+  return best;
+}
+function baCabinCode(segs) {
+  const best=itinerarySearchCabin(segs)||'COACH';
   return best==='FIRST'?'F':best==='BUSINESS'?'C':best==='PREMIUM-COACH'?'W':'M';
 }
 function baSliceIndex(segs) {
@@ -120,52 +129,15 @@ export function ondSlices(segments) {
   if (baSegmentsMalformed(segments)) return [];
   return baOndJourneys(segments).map(j=>({origin:j.o,dest:j.d,ymd:j.date}));
 }
-/** O&D slices annotated with each cabin present on their component legs.
- *  Google Flights accepts one cabin per search, so a mixed-cabin connection is
- *  represented in each applicable cabin group instead of silently choosing one. */
-export function ondSlicesWithCabin(segments) {
-  if (baSegmentsMalformed(segments)) return [];
-  const indexes=baSliceIndex(segments);
-  const journeys=[];
-  for(let i=0;i<segments.length;i++){
-    const s=segments[i];
-    let journey=journeys[journeys.length-1];
-    if(!journey||indexes[i]!==indexes[i-1]){
-      journey={origin:s.origin,dest:s.dest,ymd:s.ymd,cabins:[]};
-      journeys.push(journey);
-    }else{
-      journey.dest=s.dest;
-    }
-    const cabin=segmentCabin(s.carrier,s.cls);
-    if(!journey.cabins.includes(cabin))journey.cabins.push(cabin);
-  }
-  return journeys.flatMap(({origin,dest,ymd,cabins})=>
-    cabins.map(cabin=>({origin,dest,ymd,cabin})));
-}
-function normalizeSearchCabin(value) {
-  const cabin=String(value||'').trim().toUpperCase().replace(/[ _]+/g,'-');
-  if(cabin==='FIRST'||cabin==='F')return 'FIRST';
-  if(cabin==='BUSINESS'||cabin==='C'||cabin==='J')return 'BUSINESS';
-  if(cabin==='PREMIUM-COACH'||cabin==='PREMIUM-ECONOMY'||cabin==='W')return 'PREMIUM-COACH';
-  if(cabin==='COACH'||cabin==='ECONOMY'||cabin==='M'||cabin==='Y')return 'COACH';
-  return null;
-}
-/** Group cabin-annotated O&D slices into one Google Flights search per cabin.
- *  Passing raw flight segments is also supported; they are collapsed and annotated first. */
-export function gfSearchGroups(slicesOrSegments) {
-  const input=Array.isArray(slicesOrSegments)?slicesOrSegments:[];
-  const annotated=input.every(s=>s&&typeof s==='object'&&typeof s.cabin==='string');
-  const slices=annotated?input:ondSlicesWithCabin(slicesOrSegments);
-  const groups=new Map();
-  for(const slice of slices){
-    if(!/^[A-Z]{3}$/.test(slice?.origin||'')||!/^[A-Z]{3}$/.test(slice?.dest||'')||
-       !/^\d{4}-\d\d-\d\d$/.test(slice?.ymd||''))continue;
-    const cabin=normalizeSearchCabin(slice.cabin);
-    if(!cabin)continue;
-    if(!groups.has(cabin))groups.set(cabin,{cabin,slices:[]});
-    groups.get(cabin).slices.push({origin:slice.origin,dest:slice.dest,ymd:slice.ymd});
-  }
-  return [...groups.values()];
+/** The ONE Google Flights alternative: every collapsed O&D slice of the itinerary in a
+ *  single search, at the itinerary's dominant cabin. Google Flights accepts one cabin per
+ *  search, so a mixed-cabin itinerary cannot be preserved leg by leg — the UI says so. This
+ *  is an unverified third-party search, never a BA booking or fare. Null when nothing
+ *  parses, so no alternative search is fabricated. */
+export function gfSearchGroup(segments) {
+  const slices=ondSlices(segments);
+  if(!slices.length)return null;
+  return {cabin:itinerarySearchCabin(segments),slices};
 }
 function baSegmentsMalformed(segments) {
   return !Array.isArray(segments) || !segments.length ||
@@ -180,7 +152,8 @@ function baUnsupportedSlices(journeys) {
  *  The handoff is BLOCKED for real users (AA_ACCEPTANCE.md, 2026-10-12): both the
  *  one-way and the round-trip link hang forever on BA's processing page. Do NOT wire
  *  this back into resolveAirlineLink until a recorded browser run reaches BA flight
- *  results and the passenger-form benchmark passes.
+ *  results and the passenger-form benchmark passes. Building this URL (or a unit test
+ *  pinning it) is NOT evidence of reaching BA results or passenger details.
  */
 export function buildBAProcessOfferUrl(segments, passengers) {
   const c=counts(passengers);
@@ -256,9 +229,10 @@ export function resolveAirlineLink(segments, selectedCarrier, passengers, {build
         ? `Fill one row per O&D slice — ${summary} — and remove the third row.`
         : `Fill one row per O&D slice${summary?` — ${summary}`:''} (“Add another flight” if you need more rows).`;
     const gate=baUnsupportedSlices(journeys);
+    const next='Then submit BA’s search yourself and, if BA returns results, select a flight there; this link cannot open BA’s passenger details or payment directly.';
     const note=gate
-      ? `${BA_NO_PREFILL} ${enter} ${gate} The retained O&D gate still refuses to build an offer-search link for it. No flight is selected and no fare is shown or claimed here.`
-      : `${BA_NO_PREFILL} ${enter} No flight is selected and no fare is shown or claimed here.`;
+      ? `${BA_NO_PREFILL} ${enter} ${next} ${gate} The retained O&D gate still refuses to build an offer-search link for it. No flight is selected and no fare is shown or claimed here.`
+      : `${BA_NO_PREFILL} ${enter} ${next} No flight is selected and no fare is shown or claimed here.`;
     return {url:assertNotBlockedBaHandoff(BA_SEARCH_FORM_URL),kind:'search_unverified',
       label:'Open BA search form',note,manualEntry:true,
       manualEntryHint:summary?`Type into BA's form: ${summary}`:'Type the itinerary into BA’s form.'};
