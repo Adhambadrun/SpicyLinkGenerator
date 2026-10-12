@@ -31,16 +31,15 @@ For AA-selected itineraries, Generate copies and opens the historical `/goto/met
 URL; Copy copies the same URL. The original URL format is unchanged, but its presence does not
 verify flight selection, availability or price. Transient post-redirect AA parameters (such as
 `/airfare-sales/ui/passenger-ui/` query IDs) are session-specific and are never stored in code,
-tests or docs. For BA-selected itineraries, Generate and Copy use the repository's legacy
-`baUrl` (`/travel/book/public/en_gb/processOffer?onds=…`) O&D search builder — but only for
-one-way and round-trip shapes (at most 2 O&D slices). Live probes on 2026-10-12 showed the
-endpoint answers every input, valid or not, with the same "Processing Flight Selection" page,
-so multi-city acceptance is unprovable: 3+ O&D-slice itineraries fall back to a clearly labeled
-BA homepage with the reason stated (see [AA_ACCEPTANCE.md](AA_ACCEPTANCE.md)). Supported shapes
-remain clearly labeled as
-`search_unverified` because the URL encodes only slice origin/destination, dates, dominant cabin and
-passenger counts (flight numbers and non-BA legs are **not** preselected). Delta and United
-direct one-way/round-trip itineraries also have *unverified search prefills* (not flight
+tests or docs. For BA-selected itineraries Generate and Copy emit **no BA link at all**: a
+real-browser run on 2026-10-12 showed both the one-way and the round-trip `processOffer` link
+hanging forever on BA's "Give us a moment, we're calculating your price" page — no results, no
+error, no homepage redirect — so that handoff is recorded as **BLOCKED** and every BA shape falls
+back to the clearly labeled BA homepage with the reason in the note (see
+[AA_ACCEPTANCE.md](AA_ACCEPTANCE.md)). The O&D slice gate and the legacy `buildBAProcessOfferUrl`
+survive only for manual re-probing via `tools/ba-live-probe.mjs` (which drives a real browser and
+redacts transient tokens); nothing in the app calls a BA builder any more. Delta and United
+direct one-way/round-trip itineraries have *unverified search prefills* (not flight
 selection or checkout). All other carriers use their own directory homepage. No fabricated price
 or passenger details are passed to these sites.
 Airline marks are used for identification only; see

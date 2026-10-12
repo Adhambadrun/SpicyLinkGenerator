@@ -199,6 +199,7 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, BA fall
     assert.equal(elements.get('generate-link').textContent,'Visit British Airways website');
     assert.match(elements.get('link-note').textContent,/one-way and round-trip only/);
     assert.match(elements.get('link-note').textContent,/3 O&D slices/);
+    assert.match(elements.get('link-note').textContent,/unusable/);
     assert.match(elements.get('link-note').textContent,/not a selected flight/);
 
     // Switch dropdown from BA (option 0) to AA (option 1).
@@ -221,16 +222,35 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, BA fall
   }
 });
 
-test('1-leg BA-only GDS itinerary resolves to the BA processOffer offer search (unverified processing page is live; results unverified)', async () => {
+test('1-leg BA-only GDS itinerary falls back to the clearly labeled BA homepage (processOffer BLOCKED in real browsers)', async () => {
   const {elements,window,opened,copied}=await app();
   elements.get('gds').value='1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E';
   await window.openSelectedLink();
   await window.copyLink();
-  const expected='https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-LHR_2026-10-30&ad=1&yad=0&ch=0&inf=0&cabin=C&flex=LOWEST&ond=1';
-  assert.deepEqual(opened,[expected]);
-  assert.deepEqual(copied,[expected]);
-  assert.equal(elements.get('generate-link').textContent,'Open BA offer search');
-  assert.match(elements.get('link-note').textContent,/NOT preselected/);
-  assert.match(elements.get('link-note').textContent,/no live fare is verified/);
-  assert.doesNotMatch(opened[0],/search-journey-id|cid=|passenger-ui/i);
+  // Real-browser runs on 2026-10-12 hung forever on BA's "calculating your price" page for
+  // this shape, so the app must not hand users the processOffer URL at all.
+  assert.deepEqual(opened,['https://www.britishairways.com/']);
+  assert.deepEqual(copied,['https://www.britishairways.com/']);
+  assert.equal(elements.get('generate-link').textContent,'Visit British Airways website');
+  const note=elements.get('link-note').textContent;
+  assert.match(note,/unusable/);
+  assert.match(note,/calculating your price/);
+  assert.match(note,/2026-10-12/);
+  assert.match(note,/not a selected flight/);
+  assert.doesNotMatch(opened[0],/processOffer|search-journey-id|cid=|passenger-ui/i);
+});
+
+test('round-trip BA-only GDS itinerary also falls back to the BA homepage, never a processOffer link', async () => {
+  const {elements,window,opened,copied}=await app();
+  elements.get('gds').value=[
+    '1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E',
+    '2 BA 324J 06NOV F LHRCDG SS1   840A 1105A /DCBA /E',
+  ].join('\n');
+  await window.openSelectedLink();
+  await window.copyLink();
+  assert.deepEqual(opened,['https://www.britishairways.com/']);
+  assert.deepEqual(copied,['https://www.britishairways.com/']);
+  assert.equal(elements.get('generate-link').textContent,'Visit British Airways website');
+  assert.match(elements.get('link-note').textContent,/unusable/);
+  assert.doesNotMatch(opened[0],/processOffer|search-journey-id|cid=|passenger-ui/i);
 });

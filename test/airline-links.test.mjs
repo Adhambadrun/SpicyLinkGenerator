@@ -66,8 +66,9 @@ test('mixed BA/AA 6-leg itinerary: BA falls back clearly beyond 2 O&D slices whi
     {carrier:'AA',num:'1770',cls:'O',origin:'STI',dest:'MIA',ymd:'2027-01-21',depH:7,depM:20,arrH:8,arrM:46,plus:false},
     {carrier:'AA',num:'112',cls:'O',origin:'MIA',dest:'BCN',ymd:'2027-01-21',depH:16,depM:15,arrH:7,arrM:5,plus:true},
   ];
-  // 6 legs collapse to 3 O&D slices (CDG-MSY, MIA-STI, STI-BCN): BA's processing page
-  // cannot prove multi-city acceptance (AA_ACCEPTANCE.md), so no link is emitted.
+  // 6 legs collapse to 3 O&D slices (CDG-MSY, MIA-STI, STI-BCN). BA's processOffer handoff
+  // is unusable for real users (AA_ACCEPTANCE.md, 2026-10-12 BLOCKED), and multi-city was
+  // never provable either, so no link is emitted for this or any other BA shape.
   assert.throws(()=>buildBAProcessOfferUrl(itinerary,pax),/one-way and round-trip only/);
   const ba=resolveAirlineLink(itinerary,'BA',pax);
   assert.equal(ba.kind,'homepage');
@@ -78,8 +79,8 @@ test('mixed BA/AA 6-leg itinerary: BA falls back clearly beyond 2 O&D slices whi
   assert.match(ba.note,/multi-city/);
   assert.match(ba.note,/not a selected flight/);
 
-  // The shape gate runs before any injected legacy builder, so an ungated builder
-  // (like the app's historical baUrl) can never emit a multi-city processOffer URL.
+  // BA calls no builder at all (handoff BLOCKED), so even an injected legacy builder can
+  // never put a processOffer URL back into the UI for any shape.
   const gated=resolveAirlineLink(itinerary,'BA',pax,{buildBAUrl:()=>{throw new Error('must not be called');}});
   assert.equal(gated.kind,'homepage');
   assert.equal(gated.url,'https://www.britishairways.com/');
@@ -99,42 +100,43 @@ test('mixed BA/AA 6-leg itinerary: BA falls back clearly beyond 2 O&D slices whi
   ]);
 });
 
-test('BA processOffer builder encodes one-way and round-trip O&D slices, rejects multi-city, and falls back to homepage on invalid passenger counts', () => {
+test('BA emits no link for any shape after the 2026-10-12 real-browser BLOCKED result; the legacy builder stays manual-only', () => {
   const oneWay=[leg('BA','CDG','LHR','2026-10-30')];
   const roundTrip=[leg('BA','CDG','LHR','2026-10-30'),leg('BA','LHR','CDG','2026-11-06')];
-  const baOneWay=resolveAirlineLink(oneWay,'BA',pax);
-  assert.equal(baOneWay.kind,'search_unverified');
-  assert.equal(baOneWay.url,'https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-LHR_2026-10-30&ad=1&yad=0&ch=0&inf=0&cabin=M&flex=LOWEST&ond=1');
-  assert.equal(baOneWay.url,buildBAProcessOfferUrl(oneWay,pax));
-  const baRoundTrip=resolveAirlineLink(roundTrip,'BA',pax);
-  assert.equal(baRoundTrip.kind,'search_unverified');
-  assert.equal(baRoundTrip.url,'https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-LHR_2026-10-30,LHR-CDG_2026-11-06&ad=1&yad=0&ch=0&inf=0&cabin=M&flex=LOWEST&ond=2');
-  assert.equal(baRoundTrip.url,buildBAProcessOfferUrl(roundTrip,pax));
-  // A same-day one-way connection still counts as one O&D slice and is allowed.
+  // A same-day one-way connection is still a single O&D slice; an overnight second
+  // departure starts a second slice (open return). Both used to get a processOffer link.
   const connection=[leg('BA','CDG','LHR','2026-10-30'),leg('AA','LHR','JFK','2026-10-30')];
-  const baConnection=resolveAirlineLink(connection,'BA',pax);
-  assert.equal(baConnection.kind,'search_unverified');
-  assert.match(baConnection.url,/onds=CDG-JFK_2026-10-30&/);
-  assert.match(baConnection.url,/ond=1$/);
-  // An overnight or next-day second departure starts a second O&D slice (open return).
   const openReturn=[leg('BA','CDG','LHR','2026-10-30'),leg('AA','LHR','JFK','2026-10-31')];
-  const baOpen=resolveAirlineLink(openReturn,'BA',pax);
-  assert.equal(baOpen.kind,'search_unverified');
-  assert.match(baOpen.url,/ond=2$/);
-  // 3+ O&D slices (multi-city) are refused by the builder and gate to the homepage.
   const multiCity=[leg('BA','CDG','LHR','2026-10-30'),leg('BA','LHR','CDG','2026-11-06'),leg('BA','CDG','LHR','2026-11-13')];
-  assert.throws(()=>buildBAProcessOfferUrl(multiCity,pax),/needs 3 O&D slices/);
+  for (const itinerary of [oneWay,roundTrip,connection,openReturn,multiCity]) {
+    const result=resolveAirlineLink(itinerary,'BA',pax);
+    assert.equal(result.kind,'homepage');
+    assert.equal(result.url,'https://www.britishairways.com/');
+    assert.equal(result.label,'Visit British Airways website');
+    assert.match(result.note,/unusable/);
+    assert.match(result.note,/2026-10-12/);
+    assert.match(result.note,/AA_ACCEPTANCE\.md/);
+    assert.match(result.note,/not a selected flight/);
+    assert.doesNotMatch(result.url,/processOffer/);
+  }
+  // The multi-city shape still states the one-way/round-trip limitation, not just "blocked".
   const baMulti=resolveAirlineLink(multiCity,'BA',pax);
-  assert.equal(baMulti.kind,'homepage');
-  assert.equal(new URL(baMulti.url).hostname,'www.britishairways.com');
+  assert.match(baMulti.note,/one-way and round-trip only/);
+  assert.match(baMulti.note,/needs 3 O&D slices/);
   assert.match(baMulti.note,/multi-city/);
+  // A stray injected builder (the app's historical baUrl) cannot resurrect the link.
+  const injected=resolveAirlineLink(oneWay,'BA',pax,{buildBAUrl:()=>'https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=BOGUS'});
+  assert.equal(injected.kind,'homepage');
+  assert.equal(injected.url,'https://www.britishairways.com/');
+  // The legacy builder survives ONLY for manual re-probing (tools/ba-live-probe.mjs) and
+  // still refuses 3+ O&D slices.
+  assert.equal(buildBAProcessOfferUrl(oneWay,pax),
+    'https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-LHR_2026-10-30&ad=1&yad=0&ch=0&inf=0&cabin=M&flex=LOWEST&ond=1');
+  assert.equal(buildBAProcessOfferUrl(roundTrip,pax),
+    'https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds=CDG-LHR_2026-10-30,LHR-CDG_2026-11-06&ad=1&yad=0&ch=0&inf=0&cabin=M&flex=LOWEST&ond=2');
+  assert.match(buildBAProcessOfferUrl(connection,pax),/onds=CDG-JFK_2026-10-30&.*ond=1$/);
+  assert.match(buildBAProcessOfferUrl(openReturn,pax),/ond=2$/);
+  assert.throws(()=>buildBAProcessOfferUrl(multiCity,pax),/needs 3 O&D slices/);
+  // Invalid passenger counts still fall back rather than throwing at the UI.
   assert.equal(resolveAirlineLink(oneWay,'BA',{...pax,adults:0}).kind,'homepage');
-});
-
-test('airlines without specific connectors use their own homepages, unknown carriers disable the link', () => {
-  const fr=resolveAirlineLink([leg('FR')],'FR',pax);
-  assert.equal(fr.kind,'homepage');
-  assert.equal(new URL(fr.url).hostname,'www.ryanair.com');
-  assert.equal(resolveAirlineLink([leg('ZZ')],'ZZ',pax).url,null);
-  assert.equal(resolveAirlineLink([leg('DL')],'DL',{...pax,adults:0}).kind,'homepage');
 });

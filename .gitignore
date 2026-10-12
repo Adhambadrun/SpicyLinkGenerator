@@ -19,3 +19,6 @@ node_modules/
 # Local preview stand-in only. The real image lives in the GitHub repo as
 # "Dead end.jpg" (uploaded by the owner) — never commit the placeholder over it.
 Dead end.jpg
+
+# Live-probe run output (screenshots + JSON report) — never committed
+artifacts/

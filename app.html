@@ -541,27 +541,6 @@ function unitedUrl(segs){const s0=segs[0];const tt=tripType(segs)==='roundTrip'?
   if(tt===2)u+='&r='+enc(segs[1].ymd);return u;}
 function deltaUrl(segs){const s0=segs[0];let u='https://www.delta.com/flight-search/book-a-flight?tripType='+(tripType(segs)==='oneWay'?'ONE_WAY':'ROUND_TRIP')+'&originCity='+enc(s0.origin)+'&destinationCity='+enc(s0.dest)+'&departureDate='+enc(s0.ymd)+'&paxCount='+paxTotal();
   if(tripType(segs)==='roundTrip')u+='&returnDate='+enc(segs[1].ymd);return u;}
-function baCabin(segs){
-  const counts={};
-  for(const s of segs){const c=cabinForCarrier(s.carrier,s.cls);counts[c]=(counts[c]||0)+1;}
-  let best='COACH',bestCount=-1,bestRank=-1;
-  for(const c in counts){const rank=c==='FIRST'?3:c==='BUSINESS'?2:c==='PREMIUM-COACH'?1:0;
-    if(counts[c]>bestCount||(counts[c]===bestCount&&rank>bestRank)){bestCount=counts[c];bestRank=rank;best=c;}}
-  return best==='FIRST'?'F':best==='BUSINESS'?'C':best==='PREMIUM-COACH'?'W':'M';
-}
-function baUrl(segs){
-  if(!segs.length)return '';
-  const idx=deltaSliceIndex(segs);
-  const journeys=[];let cur=-1;
-  for(let i=0;i<segs.length;i++){
-    if(idx[i]!==cur){cur=idx[i];journeys.push({o:segs[i].origin,d:segs[i].dest,date:segs[i].ymd});}
-    else journeys[journeys.length-1].d=segs[i].dest;
-  }
-  const onds=journeys.map(j=>j.o+'-'+j.d+'_'+j.date).join(',');
-  return 'https://www.britishairways.com/travel/book/public/en_gb/processOffer?onds='+onds+
-    '&ad='+adultEq()+'&yad='+pax.youths+'&ch='+childEq()+'&inf='+pax.infantsInLap+
-    '&cabin='+baCabin(segs)+'&flex=LOWEST&ond='+journeys.length;
-}
 function gfUrl(segs){
   function vi(n){const o=[];while(true){const b=n&0x7f;n>>>=7;if(n)o.push(b|0x80);else{o.push(b);break;}}return o;}
   function fl(num,p){return vi(num<<3|2).concat(vi(p.length),p);}
@@ -578,21 +557,6 @@ function itaUrl(segs){
   const slices=segs.map(s=>({origin:[s.origin],dest:[s.dest],dates:{searchDateType:'specific',departureDate:s.ymd}}));
   const obj={type:segs.length>1?'multi-city':'one-way',slices,options:{cabin:'COACH',stops:'0',extraStops:'0',allowAirportChanges:'false',showOnlyAvailable:'false'},pax:{adults:String(pax.adults)}};
   return 'https://matrix.itasoftware.com/search?search='+encodeURIComponent(btoa(JSON.stringify(obj)));
-}
-function deltaSliceIndex(segs){
-  const idx=[];let cur=0;
-  for(let i=0;i<segs.length;i++){
-    if(i>0){
-      const p=segs[i-1],s=segs[i];
-      const routeBreaks=p.dest!==s.origin;
-      const pa=new Date(p.ymd+'T00:00:00Z');pa.setUTCDate(pa.getUTCDate()+(p.plus?1:0));pa.setUTCHours(p.arrH,p.arrM,0,0);
-      const dp=new Date(s.ymd+'T00:00:00Z');dp.setUTCHours(s.depH,s.depM,0,0);
-      const gap=(dp-pa)/60000;
-      if(routeBreaks||gap>1440)cur++;
-    }
-    idx.push(cur);
-  }
-  return idx;
 }
 /* ================= app ================= */
 let pax={adults:1,seniors:0,youths:0,children:0,infantsInSeat:0,infantsInLap:0};
@@ -669,7 +633,9 @@ async function copyJson(){
 // Both actions resolve the same selected carrier and the same handoff.
 let selectedCarrier='';
 function selectedLinkFor(segments,carrier=selectedCarrier){
-  return resolveAirlineLink(segments,carrier,pax,{buildAAUrl:aaMetaUrl,buildBAUrl:baUrl});
+  // No BA builder is injected: BA's handoff is BLOCKED (AA_ACCEPTANCE.md, 2026-10-12),
+  // so resolveAirlineLink returns the clearly labeled BA homepage for every BA shape.
+  return resolveAirlineLink(segments,carrier,pax,{buildAAUrl:aaMetaUrl});
 }
 function selectedLink(){
   ensureCurrentInput();
