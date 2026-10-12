@@ -31,14 +31,25 @@ For AA-selected itineraries, Generate copies and opens the historical `/goto/met
 URL; Copy copies the same URL. The original URL format is unchanged, but its presence does not
 verify flight selection, availability or price. Transient post-redirect AA parameters (such as
 `/airfare-sales/ui/passenger-ui/` query IDs) are session-specific and are never stored in code,
-tests or docs. For BA-selected itineraries Generate and Copy emit **no BA link at all**: a
-real-browser run on 2026-10-12 showed both the one-way and the round-trip `processOffer` link
-hanging forever on BA's "Give us a moment, we're calculating your price" page — no results, no
-error, no homepage redirect — so that handoff is recorded as **BLOCKED** and every BA shape falls
-back to the clearly labeled BA homepage with the reason in the note (see
-[AA_ACCEPTANCE.md](AA_ACCEPTANCE.md)). The O&D slice gate and the legacy `buildBAProcessOfferUrl`
-survive only for manual re-probing via `tools/ba-live-probe.mjs` (which drives a real browser and
-redacts transient tokens); nothing in the app calls a BA builder any more. Delta and United
+tests or docs. For BA-selected itineraries Generate and Copy open **BA's own multi-city search
+form** (`/travel/book/public/en_gb/flightSearch`) — HTTP 200, form renders instantly, no spinner
+— because BA has **no** pre-filled URL this project could verify: a real-browser run on
+2026-10-12 showed both the one-way and the round-trip `processOffer` link hanging forever on BA's
+"Give us a moment, we're calculating your price" page (recorded **BLOCKED**), and rendering
+probes the same day showed BA's search form ignoring every prefill parameter tried
+(`onds/ad/yad/ch/inf/cabin/flex/ond` as query *or* fragment, `tripType/from/to/departDate/
+cabinclass/adult`), while `/travel/book/public/en_gb` with or without params redirects to BA's
+`/processing` payment interstitial. The form therefore opens **empty**, and the note spells out
+exactly what to type — e.g. *“Fill “Flight 1” with CDG→LHR on 2026-10-30 (business, 1 adult) and
+remove the other rows.”*, or one row per O&D slice for multi-city, with *“No flight is selected
+and no fare is shown or claimed here.”* Beside it, a second clearly labeled button offers a
+**pre-filled Google Flights search (not BA)** built from the collapsed O&D slices — a third-party
+search, never an airline booking, never a fare. The O&D slice gate and the legacy
+`buildBAProcessOfferUrl` survive only for manual re-probing via `tools/ba-live-probe.mjs` (which
+drives a real browser, can fill BA's form by hand to capture the URL BA itself produces, and
+redacts transient tokens); nothing in the app calls a BA builder any more, and
+`assertNotBlockedBaHandoff` refuses to emit any BA URL containing `processOffer`. Full evidence
+table in [AA_ACCEPTANCE.md](AA_ACCEPTANCE.md). Delta and United
 direct one-way/round-trip itineraries have *unverified search prefills* (not flight
 selection or checkout). All other carriers use their own directory homepage. No fabricated price
 or passenger details are passed to these sites.

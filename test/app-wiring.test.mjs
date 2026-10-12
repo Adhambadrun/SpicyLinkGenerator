@@ -4,8 +4,10 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { parseMatrixInput } from '../booking-tools.js';
 import { airlineOption, itineraryAirlines } from '../airline-directory.js';
-import { resolveAirlineLink } from '../airline-links.js';
+import { ondSlices, resolveAirlineLink } from '../airline-links.js';
 import { airportLocalTimeMs } from '../aa-handoff.js';
+
+const BA_SEARCH_FORM='https://www.britishairways.com/travel/book/public/en_gb/flightSearch';
 
 function makeFixture(carriers=['AA']) {
   return JSON.stringify({itinerary:{slices:carriers.map((carrier,i)=>({segments:[{
@@ -57,9 +59,9 @@ async function app({nowIso='2026-10-12T12:00:00Z'}={}) {
     static now(){return new Date(nowIso).getTime();}
   }
   const context=vm.createContext({document,window,parseMatrixInput,airlineOption,itineraryAirlines,
-    resolveAirlineLink,airportLocalTimeMs,navigator:{clipboard:{writeText:async text=>copied.push(text)}},
+    resolveAirlineLink,ondSlices,airportLocalTimeMs,navigator:{clipboard:{writeText:async text=>copied.push(text)}},
     localStorage:{getItem:()=> '1',setItem(){}},setInterval(){},setTimeout(){},
-    TextEncoder,Date:FixedDate,URL,console});
+    TextEncoder,Date:FixedDate,URL,console,btoa,atob});
   vm.runInContext(script,context,{filename:'app.html'});
   return {elements,document,window,opened,copied};
 }
@@ -194,13 +196,16 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, BA fall
       '  AA112     O ECONOMY          MIA->BCN  2027-01-21  16:15 -> 07:05 (+1)  MARRIED',
     ]);
 
-    assert.equal(opened[0],'https://www.britishairways.com/');
-    assert.equal(copied[0],'https://www.britishairways.com/');
-    assert.equal(elements.get('generate-link').textContent,'Visit British Airways website');
+    assert.equal(opened[0],BA_SEARCH_FORM);
+    assert.equal(copied[0],BA_SEARCH_FORM);
+    assert.equal(elements.get('generate-link').textContent,'Open BA search form');
     assert.match(elements.get('link-note').textContent,/one-way and round-trip only/);
-    assert.match(elements.get('link-note').textContent,/3 O&D slices/);
-    assert.match(elements.get('link-note').textContent,/unusable/);
-    assert.match(elements.get('link-note').textContent,/not a selected flight/);
+    assert.match(elements.get('link-note').textContent,/needs 3 O&D slices/);
+    assert.match(elements.get('link-note').textContent,/opens EMPTY/);
+    assert.match(elements.get('link-note').textContent,/CDG→MSY on 2026-10-30, MIA→STI on 2026-10-31, STI→BCN on 2027-01-21/);
+    // The alternative third-party search is offered next to BA's empty form, clearly labeled.
+    assert.equal(elements.get('alternative-search').hidden,false);
+    assert.match(elements.get('link-note').textContent,/NOT a BA booking/);
 
     // Switch dropdown from BA (option 0) to AA (option 1).
     const menu=elements.get('airline-picker').children[0].children[1];
@@ -222,25 +227,29 @@ test('6-leg mixed BA/AA GDS itinerary parses in order across 2026->2027, BA fall
   }
 });
 
-test('1-leg BA-only GDS itinerary falls back to the clearly labeled BA homepage (processOffer BLOCKED in real browsers)', async () => {
+test('1-leg BA-only GDS itinerary opens BA\u2019s own empty search form, never the processOffer handoff', async () => {
   const {elements,window,opened,copied}=await app();
   elements.get('gds').value='1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E';
   await window.openSelectedLink();
   await window.copyLink();
   // Real-browser runs on 2026-10-12 hung forever on BA's "calculating your price" page for
-  // this shape, so the app must not hand users the processOffer URL at all.
-  assert.deepEqual(opened,['https://www.britishairways.com/']);
-  assert.deepEqual(copied,['https://www.britishairways.com/']);
-  assert.equal(elements.get('generate-link').textContent,'Visit British Airways website');
+  // this shape, and BA's search form ignores prefill parameters (probed 2026-10-12), so the
+  // app hands over BA's own empty search form plus the itinerary to type — never processOffer.
+  assert.deepEqual(opened,[BA_SEARCH_FORM]);
+  assert.deepEqual(copied,[BA_SEARCH_FORM]);
+  assert.equal(elements.get('generate-link').textContent,'Open BA search form');
   const note=elements.get('link-note').textContent;
-  assert.match(note,/unusable/);
   assert.match(note,/calculating your price/);
   assert.match(note,/2026-10-12/);
-  assert.match(note,/not a selected flight/);
+  assert.match(note,/ignores URL parameters/);
+  assert.match(note,/opens EMPTY/);
+  assert.match(note,/CDG→LHR on 2026-10-30 \(business, 1 adult\)/);
+  assert.match(note,/remove the other rows/);
+  assert.match(note,/No flight is selected and no fare is shown or claimed/);
   assert.doesNotMatch(opened[0],/processOffer|search-journey-id|cid=|passenger-ui/i);
 });
 
-test('round-trip BA-only GDS itinerary also falls back to the BA homepage, never a processOffer link', async () => {
+test('round-trip BA-only GDS itinerary also gets BA\u2019s empty search form, never a processOffer link', async () => {
   const {elements,window,opened,copied}=await app();
   elements.get('gds').value=[
     '1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E',
@@ -248,9 +257,50 @@ test('round-trip BA-only GDS itinerary also falls back to the BA homepage, never
   ].join('\n');
   await window.openSelectedLink();
   await window.copyLink();
-  assert.deepEqual(opened,['https://www.britishairways.com/']);
-  assert.deepEqual(copied,['https://www.britishairways.com/']);
-  assert.equal(elements.get('generate-link').textContent,'Visit British Airways website');
-  assert.match(elements.get('link-note').textContent,/unusable/);
+  assert.deepEqual(opened,[BA_SEARCH_FORM]);
+  assert.deepEqual(copied,[BA_SEARCH_FORM]);
+  assert.equal(elements.get('generate-link').textContent,'Open BA search form');
+  const note=elements.get('link-note').textContent;
+  assert.match(note,/opens EMPTY/);
+  assert.match(note,/CDG→LHR on 2026-10-30, LHR→CDG on 2026-11-06 \(business, 1 adult\)/);
+  assert.match(note,/remove the third row/);
   assert.doesNotMatch(opened[0],/processOffer|search-journey-id|cid=|passenger-ui/i);
+});
+
+test('BA offers a clearly labeled pre-filled third-party search carrying every O&D slice', async () => {
+  const {elements,window,opened,copied}=await app();
+  elements.get('gds').value=[
+    '1 BA 323J 30OCT F CDGLHR SS1   705A  735A /DCBA /E',
+    '2 AA 731I 30OCT F LHRCLT*SS1   955A  250P /DCAA /E',
+    '3 AA2615I 30OCT F CLTMSY*SS1   453P  600P /DCAA /E',
+    '4 AA1917I 31OCT J MIASTI SS1  1205P  215P /DCAA /E',
+    '5 AA1770O 21JAN Q STIMIA*SS1   720A  846A /DCAA /E',
+    '6 AA 112O 21JAN Q MIABCN*SS1   415P  705A  22JAN F /DCAA /E',
+  ].join('\n');
+  // Leg 1 is BA, so BA is selected: the primary button opens BA's own empty form and the
+  // alternative search is offered beside it.
+  await window.openSelectedLink();
+  assert.equal(opened[0],BA_SEARCH_FORM);
+  assert.equal(elements.get('alternative-search').hidden,false);
+  assert.equal(elements.get('alternative-search').disabled,false);
+  await window.openAlternativeSearch();
+  assert.equal(opened.length,2);
+  assert.equal(copied[0],opened[1]);
+  const url=new URL(opened[1]);
+  assert.equal(url.origin,'https://www.google.com');
+  assert.equal(url.pathname,'/travel/flights/search');
+  const tfs=Buffer.from(url.searchParams.get('tfs').replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('latin1');
+  // Collapsed O&D slices only: CDG-MSY, MIA-STI, STI-BCN — a connection is one row, not two.
+  for(const needle of ['CDG','MSY','MIA','STI','BCN','2026-10-30','2026-10-31','2027-01-21'])
+    assert.ok(tfs.includes(needle),'third-party payload must carry '+needle);
+  assert.equal((tfs.match(/LHR/g)||[]).length,0,'a connection leg must not become its own search row');
+  assert.doesNotMatch(opened[1],/processOffer|search-journey-id|cid=|passenger-ui/i);
+  // Switching to AA hides the alternative: AA's own handoff already carries the itinerary.
+  const menu=elements.get('airline-picker').children[0].children[1];
+  menu.children[1].events.click();
+  assert.equal(elements.get('alternative-search').hidden,true);
+  // Nothing parsed -> no fabricated alternative search.
+  elements.get('gds').value='';
+  await window.openAlternativeSearch();
+  assert.equal(opened.length,2);
 });
