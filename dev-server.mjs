@@ -14,6 +14,7 @@ import { join, extname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { handleRequestCode, handleVerify, handleSession, approverEmail, DEFAULT_AUTH_SECRET, warnIfDefaultSecret } from './lib/core.js';
 import { mailConfig, missingMailConfig, sendLoginCodeEmail, sendDeliveryTestEmail, isTestSender, senderSetupHint } from './lib/mailer.js';
+import { specialAccessSummary, specialAccessEmails } from './lib/special-access.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -111,6 +112,8 @@ const server = http.createServer(async (req, res) => {
         mailFrom: config.fromEmail,
         sandboxSender: testSender,
         mailReadyToSend: Boolean(config.apiKey) && Boolean(config.fromEmail) && Boolean(approver),
+        // Same shape as the deployed handler: the COUNT only, never the addresses or the PINs.
+        specialAccess: specialAccessSummary(),
         deliveryTestUrl: '/api/health?send=1',
       };
       if (!approver || testSender) {
@@ -172,6 +175,17 @@ server.listen(PORT, HOST, () => {
   console.log(`Spicy Link Generator (2FA) dev server → http://localhost:${PORT}`);
   console.log(`Sign-in codes go to the approver (${approverEmail() || 'APPROVER_EMAIL not set'}) · sender: ${STARTUP_MAIL_CONFIG.fromEmail}`);
   console.log(`Email provider: ${STARTUP_MAIL_CONFIG.apiKey ? 'Resend configured' : 'not configured (local code will be shown)'}`);
+  // Say out loud who can skip the OTP. Naming them is fine here — this is a local console, not
+  // the public /api/health URL, which reports only the count.
+  const specialSummary = specialAccessSummary();
+  if (specialSummary.enabled) {
+    console.log(
+      `[special access] ${specialSummary.accounts} inboxes sign in with a fixed 6-digit PIN, no OTP: ` +
+        specialAccessEmails().join(', ')
+    );
+  } else {
+    console.log('[special access] off (SPECIAL_ACCESS=off) — every inbox uses the OTP approval flow');
+  }
   if (isTestSender(STARTUP_MAIL_CONFIG.fromEmail)) {
     console.log(`[mail] ${senderSetupHint(STARTUP_MAIL_CONFIG.fromEmail)}`);
   }
