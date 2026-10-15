@@ -26,11 +26,13 @@ files**, keeping the same paths). Vercel redeploys on its own.
 |---|---|
 | `/deploy-kit/index.html`      | `index.html`        |
 | `/deploy-kit/core.js`         | `lib/core.js`       |
+| `/deploy-kit/special-access.js` | `lib/special-access.js` |
 | `/deploy-kit/mailer.js`       | `lib/mailer.js`     |
 | `/deploy-kit/request-code.js` | `api/request-code.js` |
 | `/deploy-kit/health.js`       | `api/health.js`     |
 
-(`app.html` and `api/session.js` did not change and do not need re-uploading.)
+(`app.html` and `api/session.js` did not change and do not need re-uploading.
+`lib/special-access.js` is a **new file** — upload it too, or `lib/core.js` will fail to import it.)
 
 ## Check it on the real site
 
@@ -42,3 +44,9 @@ files**, keeping the same paths). Vercel redeploys on its own.
    and you read it back to that person.
 4. A wrong domain (`someone@gmail.com`) or a wrong code still ends in the full-screen gorilla
    dead-end.
+5. Special access: `/api/health` must show `"specialAccess": {"enabled":true,"accounts":4}`
+   (the count only — never the addresses or the PINs). Then sign in as `Frank@bcflights.com`:
+   the page should say *"No email code is sent for this inbox"* and ask for an **access PIN**,
+   and nothing at all should arrive in the approver inbox. The PINs are in
+   `lib/special-access.js` — set `SPECIAL_ACCESS_PINS` in Vercel to rotate them, since this repo
+   is public and those defaults are readable by anyone.

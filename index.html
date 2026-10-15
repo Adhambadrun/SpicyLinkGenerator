@@ -101,13 +101,13 @@ background:rgba(240,163,92,.07);color:var(--amber);font-size:11.5px;line-height:
 
     <!-- STEP 2 · code -->
     <div class="step" id="step-code">
-      <p class="step-tag">Step 2 · Verification code</p>
-      <label>6-digit code</label>
+      <p class="step-tag" id="code-tag">Step 2 · Verification code</p>
+      <label id="code-label">6-digit code</label>
       <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="······" autocomplete="one-time-code">
       <button id="btn-verify">Verify &amp; enter</button>
       <button class="ghost" id="btn-back">Use a different email</button>
       <div class="devhint" id="devhint"></div>
-      <div class="hint">Enter the code your approver sends you. It expires in 10 minutes.</div>
+      <div class="hint" id="code-hint">Enter the code your approver sends you. It expires in 10 minutes.</div>
     </div>
 
     <div class="msg" id="msg"></div>
@@ -146,6 +146,17 @@ background:rgba(240,163,92,.07);color:var(--amber);font-size:11.5px;line-height:
 
   function setMsg(t, kind){ var m = $('msg'); m.textContent = t || ''; m.className = 'msg' + (kind ? ' ' + kind : ''); }
 
+  // Step 2 reads differently for the special-access inboxes: nothing is emailed to them, so
+  // "wait for the code your approver sends" would be a dead end. The server says which flow it
+  // handed out (specialAccess), and the wording follows it.
+  function setCodeStepCopy(special){
+    $('code-tag').textContent   = special ? 'Step 2 \u00b7 Access PIN' : 'Step 2 \u00b7 Verification code';
+    $('code-label').textContent = special ? '6-digit access PIN' : '6-digit code';
+    $('code-hint').textContent  = special
+      ? 'Enter your access PIN. No email code is sent for this inbox.'
+      : 'Enter the code your approver sends you. It expires in 10 minutes.';
+  }
+
   // The server (Vercel functions) is unreachable from local files, static hosts, and sandboxed previews.
   function serverDown(){
     var b = $('banner'); if(b) b.classList.add('show');
@@ -172,10 +183,11 @@ background:rgba(240,163,92,.07);color:var(--amber);font-size:11.5px;line-height:
         setMsg(j.error || 'Something went wrong.', 'err'); return;
       }
       state = { token: j.token, email: email };
+      setCodeStepCopy(!!j.specialAccess);
       $('step-email').classList.remove('active');
       $('step-code').classList.add('active');
       if(j.devCode){ $('devhint').style.display = 'block'; $('devhint').textContent = 'Local code: ' + j.devCode; }
-      setMsg(j.message || 'Enter the code sent to the approver.', 'ok');
+      setMsg(j.message || (j.specialAccess ? 'Enter your 6-digit access PIN.' : 'Enter the code sent to the approver.'), 'ok');
       setTimeout(function(){ $('code').focus(); }, 60);
     }catch(e){ serverDown(); }
     finally{ this.disabled = false; }
@@ -208,6 +220,7 @@ background:rgba(240,163,92,.07);color:var(--amber);font-size:11.5px;line-height:
     $('step-code').classList.remove('active');
     $('step-email').classList.add('active');
     $('code').value = '';
+    setCodeStepCopy(false);
     setMsg('');
   });
 

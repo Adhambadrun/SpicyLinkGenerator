@@ -8,6 +8,7 @@
 // sign-in codes can actually arrive — mailReadyToSend only says a send can be attempted.
 import { mailConfig, missingMailConfig, isTestSender, senderSetupHint, sendDeliveryTestEmail } from '../lib/mailer.js';
 import { approverEmail } from '../lib/core.js';
+import { specialAccessSummary } from '../lib/special-access.js';
 
 // Best-effort guard so the public URL cannot be used to spam the approver inbox. Serverless
 // instances each keep their own copy; one test per half-minute is plenty for a human.
@@ -82,6 +83,10 @@ function statusReport() {
     // is reported rather than treated as a failure.
     sandboxSender: testSender,
     mailReadyToSend: Boolean(apiKey) && Boolean(fromEmail) && Boolean(approver),
+    // Inboxes that sign in with a fixed access PIN instead of an emailed OTP. Only the COUNT is
+    // published — /api/health is a public URL, and neither the addresses nor the PINs belong on
+    // it. See lib/special-access.js.
+    specialAccess: specialAccessSummary(),
     deliveryTestUrl: '/api/health?send=1',
   };
 

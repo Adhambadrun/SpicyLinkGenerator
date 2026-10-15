@@ -9,10 +9,22 @@
 //      the person signing in.
 //   4) verify       -> check signature/expiry/code -> sign a session cookie (stays alive while the tab is open)
 //
+// A few named inboxes are exempt from step 3: they sign in with a fixed 6-digit access PIN
+// instead of an emailed OTP, so no approver has to relay a code. The PIN simply replaces the
+// code — see lib/special-access.js for the list, the environment overrides, and the security
+// notes on standing credentials.
+//
 // Domain-locked to @bcflights.com and @travelbusinessclass.com by default
 // (override with ALLOWED_DOMAINS — comma-separated — or the legacy single ALLOWED_DOMAIN).
 
 import crypto from 'crypto';
+import {
+  specialAccessPin,
+  pinLockedOut,
+  notePinFailure,
+  clearPinFailures,
+  PIN_LOCKOUT_MS,
+} from './special-access.js';
 
 // The API handlers fall back to this when AUTH_SECRET is not set, so the app runs with
 // zero configuration. On a PUBLIC repository it should be replaced with a real secret
@@ -139,6 +151,37 @@ export async function handleRequestCode({ email, secret, sendEmail, devMode = fa
   if (!isAllowedDomain(e.split('@')[1]))
     return { status: 403, json: { error: `Only ${allowedDomainsLabel()} emails are allowed.` } };
 
+  // Special-access inboxes stop here: no approver, no email, no OTP. The token carries the
+  // SHA-256 of that inbox's fixed PIN, so handleVerify() and everything after it are unchanged
+  // — same token expiry, same signed session cookie. See lib/special-access.js.
+  const pin = specialAccessPin(e);
+  if (pin) {
+    // A locked inbox is told before any token is minted, so hammering "request code" cannot
+    // be used to keep guessing past the throttle.
+    if (pinLockedOut(e)) {
+      return {
+        status: 429,
+        json: { error: `Too many wrong PIN attempts — wait ${PIN_LOCKOUT_MS / 60000} minutes and try again.` },
+      };
+    }
+    // Audit trail for whoever reads the platform logs. The browser is told only that it should
+    // ask for a PIN — never the PIN itself, not even in DEV_MODE.
+    console.log(`[spicy-link-generator] special access: ${e} requested sign-in (no OTP emailed)`);
+    const token = sign(
+      { email: e, name: displayNameFromEmail(e), codeHash: sha256(pin), exp: Date.now() + CODE_TTL_MS, attempts: 0, special: true },
+      secret
+    );
+    return {
+      status: 200,
+      json: {
+        ok: true,
+        token,
+        specialAccess: true,
+        message: `No email code is sent for ${e} — enter your 6-digit access PIN.`,
+      },
+    };
+  }
+
   // The code is delivered to the approver inbox, so without one there is no way to finish
   // a sign-in. This is a deployment problem, not something the visitor typed.
   const approver = approverEmail();
@@ -210,17 +253,35 @@ export function handleVerify({ token, code, email, secret }) {
   if (Date.now() > p.exp) return { status: 401, json: { error: 'Code expired — request a new one.' } };
   if (String(email || '').trim().toLowerCase() !== p.email)
     return { status: 401, json: { error: 'Email does not match this code.' } };
+
+  // A special-access token is checked against a fixed PIN rather than a fresh OTP, so the
+  // per-token budget below is not enough on its own: request a new token and it resets. The
+  // per-inbox lockout carries on across tokens instead, and is checked first so a locked inbox
+  // is always told it is locked rather than being invited to ask for another code.
+  // See lib/special-access.js.
+  const special = Boolean(p.special);
+  const word = special ? 'PIN' : 'code';
+  if (special && pinLockedOut(p.email)) {
+    return {
+      status: 429,
+      json: { error: `Too many wrong PIN attempts — wait ${PIN_LOCKOUT_MS / 60000} minutes and try again.` },
+    };
+  }
+
   if ((p.attempts || 0) >= MAX_ATTEMPTS)
     return { status: 429, json: { error: 'Too many attempts — request a new code.' } };
 
   if (sha256(String(code || '').trim()) !== p.codeHash) {
     p.attempts = (p.attempts || 0) + 1;
+    if (special) notePinFailure(p.email);
     const remaining = MAX_ATTEMPTS - p.attempts;
     return {
       status: 401,
-      json: { error: `Wrong code — ${remaining} attempt${remaining === 1 ? '' : 's'} left.`, token: sign(p, secret) },
+      json: { error: `Wrong ${word} — ${remaining} attempt${remaining === 1 ? '' : 's'} left.`, token: sign(p, secret) },
     };
   }
+
+  if (special) clearPinFailures(p.email);
 
   return {
     status: 200,

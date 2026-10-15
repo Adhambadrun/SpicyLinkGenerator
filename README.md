@@ -93,6 +93,52 @@ Security properties:
 - The code is **never** returned to the browser in production — it only exists in the
   approval email.
 
+### Special access: sign in with a PIN instead of an OTP
+
+Four inboxes skip the emailed OTP entirely and use a **fixed 6-digit access PIN** instead —
+no approver has to relay a code to them:
+
+| Inbox | Access PIN |
+| --- | --- |
+| `Frank@bcflights.com` | `602096` |
+| `Lamar@bcflights.com` | `721478` |
+| `Dex@bcflights.com` | `407230` |
+| `Lucy@bcflights.com` | `509266` |
+
+How it differs from the normal flow:
+
+- They enter their address as usual, then **no email is sent to anyone** — not to them, not to
+  the approver. The login page says *"No email code is sent for this inbox"* so they are not
+  left waiting for something that never arrives.
+- The PIN **replaces the emailed code** rather than bypassing the check: the server signs the
+  same kind of token, this time with the SHA-256 of their PIN as the `codeHash`, and
+  `handleVerify()` compares the typed digits against it. Same 10-minute token expiry, same
+  signed session cookie, same tab-closes-session behaviour.
+- They do not need an approver inbox to exist, so `APPROVER_EMAIL=none` does not lock them out.
+- Each inbox has a **different** PIN, and one person's PIN does not open another's inbox.
+
+**Rotate / disable them:**
+
+```bash
+SPECIAL_ACCESS_PINS=frank@bcflights.com=123456,lucy@bcflights.com=654321   # replaces the built-in list
+SPECIAL_ACCESS=off                                                         # sends them back to the OTP flow
+```
+
+`SPECIAL_ACCESS_PINS` wins over the built-in defaults, so a PIN can be rotated without a code
+change. Malformed entries are ignored rather than trusted, so a typo falls back to the
+defaults instead of becoming a working guess.
+
+> ⚠️ **A fixed PIN is a standing credential, and this repo is public.** The defaults above are
+> in `lib/special-access.js`, so anyone can read them, and they stay in git history forever —
+> deleting the file later does not retract them. Set `SPECIAL_ACCESS_PINS` in Vercel before
+> trusting this in production. A 6-digit space is only 1,000,000 combinations, so the real
+> defence is the lockout: **10 wrong PINs lock that inbox for 15 minutes**, and unlike the
+> per-token limit the counter survives asking for a new code. It is in-memory per instance, so
+> on a serverless deployment it slows an attacker down rather than stopping one.
+>
+> `/api/health` reports `specialAccess: { enabled, accounts }` — the count only, never the
+> addresses or the PINs.
+
 ### Dead end for outsiders
 
 A **non-@bcflights.com / non-@travelbusinessclass.com email** *or* a **wrong/expired code** replaces the whole login page
@@ -290,6 +336,11 @@ approver inbox.
 
 - ⚠️ Sign-in is two steps: the domain list decides who may ask, and the approver decides who
   actually gets in. Share the 6-digit code only with the person who asked for it.
+- ⚠️ **Four inboxes bypass the approver** (`Frank@` / `Lamar@` / `Dex@` / `Lucy@bcflights.com`)
+  and sign in with a fixed access PIN — see *Special access* above. Those PINs are committed
+  defaults in a **public** repo, so set `SPECIAL_ACCESS_PINS` in Vercel to rotate them, or
+  `SPECIAL_ACCESS=off` to switch the bypass off. The built-in `AUTH_SECRET` fallback and these
+  PINs are the two ways into the app that do not involve an emailed code.
 - ⚠️ **This repo is public.** Never commit `RESEND_API_KEY` or `AUTH_SECRET`. Any Resend key
   that was previously present in the repository should be revoked and replaced in Vercel →
   Settings → Environment Variables. Anyone who knows the fallback `AUTH_SECRET` can forge a
